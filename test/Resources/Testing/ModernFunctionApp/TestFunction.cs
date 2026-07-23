@@ -80,10 +80,31 @@ public sealed class TestFunction(ILogger<TestFunction> logger)
             context.TraceContext.Attributes["trace-key"],
             context.TraceContext.Baggage["baggage-key"]);
 
+    [Function("GenericOutput")]
+    public GenericOutputs GenericOutput(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post")] string request)
+        => new()
+        {
+            ReturnValue = request,
+            Output = $"output:{request}"
+        };
+
     [Function("NonHttpFunction")]
     public string NonHttpFunction([TestTrigger] string value) => value;
 }
 
 public sealed class TestTriggerAttribute : TriggerBindingAttribute
 {
+}
+
+public sealed class TestOutputAttribute : OutputBindingAttribute
+{
+}
+
+public sealed class GenericOutputs
+{
+    public string? ReturnValue { get; init; }
+
+    [TestOutput]
+    public string? Output { get; init; }
 }

@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>Testing.Benchmarks</AssemblyName>
+    <RootNamespace>Microsoft.Azure.Functions.Worker.Testing.Benchmarks</RootNamespace>
+    <LangVersion>preview</LangVersion>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DotNetWorker.Testing\DotNetWorker.Testing.csproj" />
+    <ProjectReference Include="..\Resources\Testing\ModernFunctionApp\ModernFunctionApp.csproj" />
+  </ItemGroup>
+
+</Project>

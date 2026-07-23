@@ -54,6 +54,11 @@ public class TransportConformanceTests
                     new Dictionary<string, string> { ["trace-key"] = "trace-value" },
                     new Dictionary<string, string> { ["baggage-key"] = "baggage-value" }))
                 .WithInvocationId("transport-trace"));
+        yield return Fixture(
+            "GenericOutput",
+            FunctionInvocationRequest.Create()
+                .WithInput("request", FunctionTestValue.String("payload"))
+                .WithInvocationId("transport-output"));
 
         FunctionTestModelBindingData model = new(
             "1.0",
@@ -98,6 +103,28 @@ public class TransportConformanceTests
             await TransportDifferentialRunner.RunInMemoryAsync(functionName, request);
         TransportDifferentialRunner.TransportRun serialized =
             await TransportDifferentialRunner.RunSerializedAsync(functionName, request);
+
+        TransportDifferentialRunner.AssertEquivalent(inMemory, serialized);
+    }
+
+    [Fact]
+    public async Task Cancellation_MatchesSerializedLoopbackGrpc()
+    {
+        FunctionInvocationRequest request = FunctionInvocationRequest.Create()
+            .WithInput("request", FunctionTestValue.String("wait"))
+            .WithInvocationId("transport-cancel");
+
+        TransportDifferentialRunner.TransportRun inMemory =
+            await TransportDifferentialRunner.RunInMemoryAsync(
+                "GenericCancel",
+                request,
+                cancelAfterStartup: TimeSpan.FromMilliseconds(100));
+
+        TransportDifferentialRunner.TransportRun serialized =
+            await TransportDifferentialRunner.RunSerializedAsync(
+                "GenericCancel",
+                request,
+                cancelAfterStartup: TimeSpan.FromMilliseconds(100));
 
         TransportDifferentialRunner.AssertEquivalent(inMemory, serialized);
     }

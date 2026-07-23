@@ -12,21 +12,38 @@ internal static class TransportDifferentialRunner
     internal static async Task<TransportRun> RunInMemoryAsync(
         string functionName,
         FunctionInvocationRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        TimeSpan? cancelAfterStartup = null)
     {
         InMemoryFunctionsHost? protocol = null;
         await using var factory = CreateFactory()
             .WithProtocolObserver(value => protocol = value);
-        FunctionInvocationResult result = await factory.InvokeAsync(functionName, request, cancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(20));
-        await factory.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(20));
-        return new TransportRun(result, NormalizeTranscript(protocol!.Transcript));
+        CancellationTokenSource? scheduledCancellation = null;
+        try
+        {
+            if (cancelAfterStartup is TimeSpan delay)
+            {
+                _ = factory.Services;
+                scheduledCancellation = new CancellationTokenSource(delay);
+                cancellationToken = scheduledCancellation.Token;
+            }
+
+            FunctionInvocationResult result = await factory.InvokeAsync(functionName, request, cancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(20));
+            await factory.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(20));
+            return new TransportRun(result, NormalizeTranscript(protocol!.Transcript));
+        }
+        finally
+        {
+            scheduledCancellation?.Dispose();
+        }
     }
 
     internal static async Task<TransportRun> RunSerializedAsync(
         string functionName,
         FunctionInvocationRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        TimeSpan? cancelAfterStartup = null)
     {
         await using var server = new LoopbackGrpcServer();
         InMemoryFunctionsHost? protocol = null;
@@ -37,10 +54,25 @@ internal static class TransportDifferentialRunner
                 protocol = value;
                 server.AttachProtocol(value);
             });
-        FunctionInvocationResult result = await factory.InvokeAsync(functionName, request, cancellationToken)
-            .WaitAsync(TimeSpan.FromSeconds(20));
-        await factory.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(20));
-        return new TransportRun(result, NormalizeTranscript(protocol!.Transcript));
+        CancellationTokenSource? scheduledCancellation = null;
+        try
+        {
+            if (cancelAfterStartup is TimeSpan delay)
+            {
+                _ = factory.Services;
+                scheduledCancellation = new CancellationTokenSource(delay);
+                cancellationToken = scheduledCancellation.Token;
+            }
+
+            FunctionInvocationResult result = await factory.InvokeAsync(functionName, request, cancellationToken)
+                .WaitAsync(TimeSpan.FromSeconds(20));
+            await factory.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(20));
+            return new TransportRun(result, NormalizeTranscript(protocol!.Transcript));
+        }
+        finally
+        {
+            scheduledCancellation?.Dispose();
+        }
     }
 
     internal static void AssertEquivalent(TransportRun expected, TransportRun actual)
