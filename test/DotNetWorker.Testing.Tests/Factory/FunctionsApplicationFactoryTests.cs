@@ -23,7 +23,7 @@ public class FunctionsApplicationFactoryTests
         InMemoryFunctionsHost protocol = factory.Services.GetRequiredService<InMemoryFunctionsHost>();
 
         Assert.Equal(InMemoryFunctionsHostState.Ready, protocol.State);
-        Assert.Equal("ModernEcho", Assert.Single(protocol.FunctionMetadata).Name);
+        Assert.Contains(protocol.FunctionMetadata, metadata => metadata.Name == "ModernEcho");
     }
 
     [Fact]
@@ -92,8 +92,53 @@ public class FunctionsApplicationFactoryTests
         Task<IServiceProvider> classicStart = Task.Run(() => classic.Services);
         await Task.WhenAll(modernStart, classicStart);
 
-        Assert.Equal("ModernEcho", modernStart.Result.GetRequiredService<InMemoryFunctionsHost>().FunctionMetadata.Single().Name);
+        Assert.Contains(
+            modernStart.Result.GetRequiredService<InMemoryFunctionsHost>().FunctionMetadata,
+            metadata => metadata.Name == "ModernEcho");
         Assert.Equal("ClassicEcho", classicStart.Result.GetRequiredService<InMemoryFunctionsHost>().FunctionMetadata.Single().Name);
+    }
+
+    [Fact]
+    public async Task Factory_StartupFailureIsCachedAndDoesNotPoisonLaterApplicationScope()
+    {
+        var expected = new InvalidOperationException("Expected startup failure.");
+        await using var failed = new FunctionsApplicationFactory<ModernFunctionApp.Program>()
+            .WithContentRoot(GetFunctionOutput("ModernFunctionApp"))
+            .WithHostBuilder(_ => throw expected);
+
+        InvalidOperationException first = Assert.Throws<InvalidOperationException>(() => _ = failed.Services);
+        InvalidOperationException second = Assert.Throws<InvalidOperationException>(() => _ = failed.Services);
+
+        Assert.Same(expected, first);
+        Assert.Same(first, second);
+
+        await using var recovered = new FunctionsApplicationFactory<ClassicFunctionApp.Program>()
+            .WithContentRoot(GetFunctionOutput("ClassicFunctionApp"));
+
+        Assert.Equal(
+            "ClassicEcho",
+            recovered.Services.GetRequiredService<InMemoryFunctionsHost>().FunctionMetadata.Single().Name);
+    }
+
+    [Fact]
+    public async Task Factory_ExplicitContentRootSupportsShadowCopyLayout()
+    {
+        string source = GetFunctionOutput("ModernFunctionApp");
+        string shadowCopy = Directory.CreateTempSubdirectory("functions-factory-shadow-").FullName;
+        try
+        {
+            CopyDirectory(source, shadowCopy);
+            await using var factory = new FunctionsApplicationFactory<ModernFunctionApp.Program>()
+                .WithContentRoot(shadowCopy);
+
+            InMemoryFunctionsHost protocol = factory.Services.GetRequiredService<InMemoryFunctionsHost>();
+
+            Assert.Contains(protocol.FunctionMetadata, metadata => metadata.Name == "ModernEcho");
+        }
+        finally
+        {
+            Directory.Delete(shadowCopy, recursive: true);
+        }
     }
 
     [Fact]
@@ -155,4 +200,17 @@ public class FunctionsApplicationFactoryTests
             "bin",
             "Release",
             "net8.0"));
+
+    private static void CopyDirectory(string source, string destination)
+    {
+        foreach (string directory in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
+        {
+            Directory.CreateDirectory(Path.Combine(destination, Path.GetRelativePath(source, directory)));
+        }
+
+        foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            File.Copy(file, Path.Combine(destination, Path.GetRelativePath(source, file)));
+        }
+    }
 }

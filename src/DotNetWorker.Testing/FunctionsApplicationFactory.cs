@@ -4,16 +4,23 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Net.Http;
 using System.Reflection;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Azure.Functions.Worker.Grpc;
+using Microsoft.Azure.Functions.Worker.Grpc.Messages;
+using Microsoft.Azure.Functions.Worker.Testing.Http;
 using Microsoft.Azure.Functions.Worker.Testing.Hosting;
+using Microsoft.Azure.Functions.Worker.Testing.Invocation;
 using Microsoft.Azure.Functions.Worker.Testing.Protocol;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Microsoft.Azure.Functions.Worker.Testing;
 
@@ -29,6 +36,7 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
     private readonly IReadOnlyDictionary<string, string?> _settings;
     private readonly FunctionsApplicationFactoryOptions _options;
     private readonly string? _contentRoot;
+    private readonly IReadOnlySet<string> _httpCompanionActivations;
     private readonly Lazy<Task<FactoryState>> _startup;
     private int _disposed;
 
@@ -39,7 +47,8 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
             Array.Empty<Action<IServiceCollection>>(),
             new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase),
             new FunctionsApplicationFactoryOptions(),
-            contentRoot: null)
+            contentRoot: null,
+            new HashSet<string>(StringComparer.Ordinal))
     {
     }
 
@@ -48,18 +57,96 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
         IReadOnlyList<Action<IServiceCollection>> serviceConfigurations,
         IReadOnlyDictionary<string, string?> settings,
         FunctionsApplicationFactoryOptions options,
-        string? contentRoot)
+        string? contentRoot,
+        IReadOnlySet<string> httpCompanionActivations)
     {
         _hostConfigurations = hostConfigurations;
         _serviceConfigurations = serviceConfigurations;
         _settings = settings;
         _options = options;
         _contentRoot = contentRoot;
+        _httpCompanionActivations = httpCompanionActivations;
         _startup = new Lazy<Task<FactoryState>>(StartAsync, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     /// <summary>Gets the started application's service provider.</summary>
     public IServiceProvider Services => GetState().Services;
+
+    /// <summary>Invokes a named function through the worker's production invocation pipeline.</summary>
+    public async Task<FunctionInvocationResult> InvokeAsync(
+        string functionName,
+        FunctionInvocationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        FactoryState state = await GetStateAsync(cancellationToken).ConfigureAwait(false);
+        RpcFunctionMetadata function = FindFunction(state.Protocol, functionName);
+        string invocationId = string.IsNullOrWhiteSpace(request.InvocationId)
+            ? Guid.NewGuid().ToString("N")
+            : request.InvocationId;
+        InvocationRequest rpcRequest = FunctionInvocationMapper.ToRpcRequest(
+            function.FunctionId,
+            request,
+            invocationId);
+
+        InvocationResponse response;
+        try
+        {
+            response = await InvokeRpcAsync(state.Protocol, rpcRequest, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException exception)
+        {
+            throw new FunctionsTestHostException(
+                $"The in-memory worker transport timed out while invoking function '{functionName}'.",
+                exception);
+        }
+
+        return FunctionInvocationMapper.ToPublicResult(response, state.Protocol.Logs);
+    }
+
+    /// <summary>
+    /// Creates a function-targeted client for built-in
+    /// <see cref="Microsoft.Azure.Functions.Worker.Http.HttpRequestData"/> functions.
+    /// URL routing, authorization, and host-owned HTTP behavior are intentionally not simulated.
+    /// </summary>
+    public HttpClient CreateHttpClient(
+        string functionName,
+        FunctionsHttpClientOptions? options = null)
+    {
+        options ??= new FunctionsHttpClientOptions();
+        options.Validate();
+        FactoryState state = GetState();
+        RpcFunctionMetadata function = FindFunction(state.Protocol, functionName);
+        string triggerName = FindHttpTriggerName(function);
+        var client = new HttpClient(new BuiltInHttpMessageHandler<TEntryPoint>(this, function.Name, triggerName))
+        {
+            BaseAddress = options.BaseAddress
+        };
+        return client;
+    }
+
+    /// <summary>Creates a client supplied by an explicitly activated HTTP companion.</summary>
+    public HttpClient CreateClient(FunctionsTestClientOptions? options = null)
+    {
+        options ??= new FunctionsTestClientOptions();
+        options.Validate();
+        IFunctionsTestHttpClientProvider[] providers = Services
+            .GetServices<IFunctionsTestHttpClientProvider>()
+            .ToArray();
+        if (providers.Length != 1)
+        {
+            throw new NotSupportedException(
+                providers.Length == 0
+                    ? "No worker HTTP companion is active. Use CreateHttpClient(functionName) for built-in "
+                        + "HttpRequestData functions, or call WithAspNetCore() from the ASP.NET Core testing companion."
+                    : "Multiple worker HTTP client providers are registered; exactly one companion provider is required.");
+        }
+
+        return new HttpClient(providers[0].CreateHandler(options))
+        {
+            BaseAddress = options.BaseAddress
+        };
+    }
 
     /// <summary>Returns an independent unstarted factory with an additional host-builder callback.</summary>
     public FunctionsApplicationFactory<TEntryPoint> WithHostBuilder(Action<IHostBuilder> configure)
@@ -122,6 +209,24 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
         return Clone(options: options);
     }
 
+    internal FunctionsApplicationFactory<TEntryPoint> WithHttpCompanion(
+        string activationId,
+        Action<IHostBuilder> configure)
+    {
+        if (string.IsNullOrWhiteSpace(activationId))
+        {
+            throw new ArgumentException("A companion activation ID is required.", nameof(activationId));
+        }
+
+        ArgumentNullException.ThrowIfNull(configure);
+        EnsureCanConfigure();
+        var activations = new HashSet<string>(_httpCompanionActivations, StringComparer.Ordinal);
+        bool added = activations.Add(activationId);
+        return Clone(
+            hostConfigurations: added ? Append(_hostConfigurations, configure) : _hostConfigurations,
+            httpCompanionActivations: activations);
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
@@ -178,6 +283,64 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
         return _startup.Value.ConfigureAwait(false).GetAwaiter().GetResult();
     }
 
+    private async Task<FactoryState> GetStateAsync(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        return await _startup.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<InvocationResponse> InvokeHttpAsync(
+        string functionName,
+        string triggerName,
+        RpcHttp http,
+        CancellationToken cancellationToken)
+    {
+        FactoryState state = await GetStateAsync(cancellationToken).ConfigureAwait(false);
+        RpcFunctionMetadata function = FindFunction(state.Protocol, functionName);
+        var request = new InvocationRequest
+        {
+            FunctionId = function.FunctionId,
+            InvocationId = Guid.NewGuid().ToString("N"),
+            TraceContext = new RpcTraceContext()
+        };
+        request.InputData.Add(new ParameterBinding
+        {
+            Name = triggerName,
+            Data = new TypedData { Http = http }
+        });
+        return await InvokeRpcAsync(state.Protocol, request, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<InvocationResponse> InvokeRpcAsync(
+        InMemoryFunctionsHost protocol,
+        InvocationRequest request,
+        CancellationToken cancellationToken)
+    {
+        Task<InvocationResponse> invocation = protocol.InvokeAsync(
+            request,
+            _options.InvocationTimeout,
+            CancellationToken.None);
+        if (!cancellationToken.CanBeCanceled)
+        {
+            return await invocation.ConfigureAwait(false);
+        }
+
+        var cancellation = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using CancellationTokenRegistration registration = cancellationToken.UnsafeRegister(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            cancellation);
+
+        if (await Task.WhenAny(invocation, cancellation.Task).ConfigureAwait(false) != invocation)
+        {
+            await protocol.CancelInvocationAsync(
+                request.InvocationId,
+                _options.InvocationTimeout,
+                CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return await invocation.ConfigureAwait(false);
+    }
+
     private async Task<FactoryState> StartAsync()
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -220,7 +383,13 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
 
         builder.ConfigureServices((_, services) =>
         {
+            RemoveUnsupportedEventLogProvider(services);
             services.AddSingleton(protocol);
+            services.AddSingleton<IFunctionsTestInvocationDispatcher>(
+                new FunctionsTestInvocationDispatcher(
+                    protocol,
+                    contentRoot,
+                    _options.InvocationTimeout));
             services.AddSingleton<InMemoryWorkerClientFactory>();
             services.Replace(ServiceDescriptor.Singleton<IWorkerClientFactory>(provider =>
                 provider.GetRequiredService<InMemoryWorkerClientFactory>()));
@@ -294,6 +463,64 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
         }
     }
 
+    private static void RemoveUnsupportedEventLogProvider(IServiceCollection services)
+    {
+        for (int index = services.Count - 1; index >= 0; index--)
+        {
+            ServiceDescriptor descriptor = services[index];
+            if (descriptor.ServiceType == typeof(ILoggerProvider)
+                && descriptor.ImplementationType?.FullName
+                    == "Microsoft.Extensions.Logging.EventLog.EventLogLoggerProvider")
+            {
+                services.RemoveAt(index);
+            }
+        }
+    }
+
+    private static RpcFunctionMetadata FindFunction(
+        InMemoryFunctionsHost protocol,
+        string functionName)
+    {
+        if (string.IsNullOrWhiteSpace(functionName))
+        {
+            throw new ArgumentException("A non-empty function name is required.", nameof(functionName));
+        }
+
+        RpcFunctionMetadata? function = protocol.FunctionMetadata.SingleOrDefault(
+            item => string.Equals(item.Name, functionName, StringComparison.OrdinalIgnoreCase));
+        return function
+            ?? throw new InvalidOperationException($"Function '{functionName}' was not found in the loaded metadata.");
+    }
+
+    private static string FindHttpTriggerName(RpcFunctionMetadata function)
+    {
+        string[] triggerNames = function.RawBindings
+            .Select(binding => JsonDocument.Parse(binding))
+            .Where(document =>
+                document.RootElement.TryGetProperty("type", out JsonElement type)
+                && string.Equals(type.GetString(), "httpTrigger", StringComparison.OrdinalIgnoreCase))
+            .Select(document =>
+            {
+                using (document)
+                {
+                    return document.RootElement.TryGetProperty("name", out JsonElement name)
+                        ? name.GetString()
+                        : null;
+                }
+            })
+            .Where(static name => !string.IsNullOrWhiteSpace(name))
+            .Cast<string>()
+            .ToArray();
+
+        if (triggerNames.Length != 1)
+        {
+            throw new InvalidOperationException(
+                $"Function '{function.Name}' must declare exactly one httpTrigger to use CreateHttpClient(functionName).");
+        }
+
+        return triggerNames[0];
+    }
+
     private void EnsureCanConfigure()
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -309,13 +536,15 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
         IReadOnlyDictionary<string, string?>? settings = null,
         FunctionsApplicationFactoryOptions? options = null,
         string? contentRoot = null,
-        bool replaceContentRoot = false)
+        bool replaceContentRoot = false,
+        IReadOnlySet<string>? httpCompanionActivations = null)
         => new(
             hostConfigurations ?? _hostConfigurations,
             serviceConfigurations ?? _serviceConfigurations,
             settings ?? _settings,
             options ?? _options.Clone(),
-            replaceContentRoot ? contentRoot : _contentRoot);
+            replaceContentRoot ? contentRoot : _contentRoot,
+            httpCompanionActivations ?? _httpCompanionActivations);
 
     private static IReadOnlyList<T> Append<T>(IReadOnlyList<T> source, T item)
     {

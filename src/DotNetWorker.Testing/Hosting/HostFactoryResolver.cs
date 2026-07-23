@@ -52,8 +52,10 @@ internal static class HostFactoryResolver
         private readonly Action<object> _configure;
         private readonly Action<Exception?> _entryPointCompleted;
         private readonly TaskCompletionSource<object> _host = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private IDisposable? _hostingSubscription;
+        private readonly object _subscriptionLock = new();
+        private readonly List<IDisposable> _hostingSubscriptions = new();
         private IDisposable? _applicationAssemblyScope;
+        private bool _subscriptionsDisposed;
 
         internal HostingListener(
             string[] args,
@@ -73,7 +75,7 @@ internal static class HostFactoryResolver
 
         internal object CreateHost()
         {
-            using IDisposable allListenersSubscription = DiagnosticListener.AllListeners.Subscribe(this);
+            IDisposable allListenersSubscription = DiagnosticListener.AllListeners.Subscribe(this);
             var thread = new Thread(RunEntryPoint) { IsBackground = true };
             thread.Start();
 
@@ -88,11 +90,31 @@ internal static class HostFactoryResolver
             catch (AggregateException) when (_host.Task.IsCompleted)
             {
             }
+            finally
+            {
+                allListenersSubscription.Dispose();
+                IDisposable[] subscriptions;
+                lock (_subscriptionLock)
+                {
+                    _subscriptionsDisposed = true;
+                    subscriptions = _hostingSubscriptions.ToArray();
+                    _hostingSubscriptions.Clear();
+                }
+
+                foreach (IDisposable subscription in subscriptions)
+                {
+                    subscription.Dispose();
+                }
+            }
 
             return _host.Task.GetAwaiter().GetResult();
         }
 
-        public void OnCompleted() => _hostingSubscription?.Dispose();
+        public void OnCompleted()
+        {
+            // Completion belongs to one DiagnosticListener. CreateHost owns and
+            // disposes every subscription so one host cannot unsubscribe another.
+        }
 
         public void OnError(Exception error)
         {
@@ -102,7 +124,18 @@ internal static class HostFactoryResolver
         {
             if (listener.Name == "Microsoft.Extensions.Hosting")
             {
-                _hostingSubscription = listener.Subscribe(this);
+                IDisposable subscription = listener.Subscribe(this);
+                lock (_subscriptionLock)
+                {
+                    if (_subscriptionsDisposed)
+                    {
+                        subscription.Dispose();
+                    }
+                    else
+                    {
+                        _hostingSubscriptions.Add(subscription);
+                    }
+                }
             }
         }
 

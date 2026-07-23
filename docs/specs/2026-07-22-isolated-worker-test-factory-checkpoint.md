@@ -1,15 +1,17 @@
 # Isolated worker test factory implementation checkpoint
 
-Last updated: 2026-07-22T18:14:22Z
+Last updated: 2026-07-23T13:37:05Z
 
 ## Repository state
 
 - Active repository: `D:\Projects\azure-functions-dotnet-worker`
 - Branch: `feature/isolated-worker-test-factory`
 - Base commit: `34ce8e6f5`
-- Approved baseline: `docs/specs/2026-07-22-isolated-worker-test-factory-v2.html`
+- Superseded approved baseline: `docs/specs/2026-07-22-isolated-worker-test-factory-v2.html`
 - Approved immutable-body SHA-256: `d9fe0c20e1d15f5f2950f54a784f75cd92f40bdc7d4b02d89438a2ab02fae508`
-- The approved plan validates successfully at this checkpoint.
+- Active approved baseline: `docs/specs/2026-07-23-isolated-worker-test-factory-v3.html`
+- Active immutable-body SHA-256: `4e18c1a9bbeaf7f6ea3de4044a1150342ad0d8ddc24713b6115d93f0b67168b6`
+- The v2 immutable body and approved v3 plan validate successfully at this checkpoint.
 - Work is intentionally uncommitted. Preserve unrelated or user-owned changes.
 - Git remotes: `origin` points to Vladyslav's fork (`https://github.com/vladyslav-panasenko/azure-functions-dotnet-worker.git`); `upstream` points to Microsoft's repository (`https://github.com/Azure/azure-functions-dotnet-worker.git`).
 - `prior-art/` is an untracked research clone and is not intended for an implementation commit unless deliberately selected.
@@ -60,9 +62,9 @@ dotnet test test\DotNetWorker.Testing.Tests\DotNetWorker.Testing.Tests.csproj -c
 
 Result: 11 passed, 0 failed.
 
-## In progress: T03 factory lifecycle
+## Completed: T03 factory lifecycle
 
-Implemented so far:
+Implemented:
 
 - Public `FunctionsApplicationFactory<TEntryPoint>` with lazy, cached startup.
 - Immutable clone semantics for `WithHostBuilder`, `WithServices`, `WithSetting`, `WithContentRoot`, and `WithOptions`.
@@ -72,19 +74,18 @@ Implemented so far:
 - In-memory transport replacement before service-provider construction.
 - Startup/shutdown ownership and idempotent disposal.
 - Modern and classic generated function-app fixtures.
+- Per-listener diagnostic subscription ownership. Completion of one host's diagnostic listener cannot unsubscribe another concurrent host.
+- Cached startup failures with recovery of a different application's scoped identity.
+- Explicit content-root support for shadow-copy layouts.
 
-Current verification:
+Verification completed:
 
-- Focused modern factory startup test passes.
-- Factory lane passes 8 of 9 tests.
-- Remaining failure: `Factory_DifferentApplicationsCanStartInParallel` intermittently leaves one entry point waiting for `HostBuilt`; `HostFactoryResolver.HostingListener.CreateHost()` times out after 30 seconds.
-
-Most likely next investigation:
-
-1. Instrument each hosting listener with an ID and record `AllListeners`, `HostBuilding`, `HostBuilt`, entry-point start, and entry-point completion on both concurrent execution contexts.
-2. Confirm whether concurrent listeners overwrite or incorrectly dispose the shared `Microsoft.Extensions.Hosting` diagnostic subscription.
-3. Make listener subscription and event ownership deterministic without serializing factories or using process-global state.
-4. Rerun the parallel different-assembly test repeatedly, followed by the full Factory and Protocol filters.
+- `Factory_DifferentApplicationsCanStartInParallel` passed 20 fresh-process repetitions.
+- Factory filter: 11 passed, 0 failed.
+- Protocol filter: 11 passed, 0 failed.
+- Complete `DotNetWorker.Testing.Tests`: 22 passed, 0 failed.
+- Core Hosting filter: 16 passed, 0 failed.
+- `DotNetWorker.Testing` builds net8.0, net9.0, and net10.0 with zero warnings/errors.
 
 Functions SDK fixture note: building the modern/classic fixture projects invokes a generated `WorkerExtensions.csproj` restore even when the outer command uses `--no-restore`. After one successful permitted build, use this command for repeat test-only runs:
 
@@ -92,10 +93,28 @@ Functions SDK fixture note: building the modern/classic fixture projects invokes
 dotnet test test\DotNetWorker.Testing.Tests\DotNetWorker.Testing.Tests.csproj -c Release --filter FullyQualifiedName~Factory --no-build --no-restore
 ```
 
-## Remaining approved tasks
+## Completed: T04 invocation and built-in HTTP
 
-- T03: finish concurrent host capture, startup failure/scope/shadow-copy tests, and lifecycle verification.
-- T04: public protocol-neutral invocation models, result mapping, and function-targeted built-in HTTP client.
+Implemented:
+
+- Public protocol-neutral invocation values, trace/retry request models, immutable results, structured exceptions, logs, and trace attributes.
+- Inputs, trigger metadata, binding-data aliasing, all supported `TypedData` cases, stream materialization, model-binding validation, and case-insensitive duplicate rejection.
+- Real worker-pipeline invocation with caller-supplied/generated IDs, user failure capture, cancellation, concurrent calls, outputs, and unknown-function validation.
+- Function-targeted built-in HTTP preserving method, URL path/query, headers, and body while explicitly excluding host routing and authorization.
+- `CreateClient()` guidance when no ASP.NET Core companion is active.
+- Additive Core `RetryContext.PreviousException` and immutable `FunctionRetryException`, with one-to-one Grpc projection and a `null` default for source-compatible custom retry contexts.
+- Direct `TaskCanceledException`/`OperationCanceledException` normalization to the public Cancelled state.
+
+Verification completed:
+
+- Focused invocation/HTTP/protocol-overlap filter: 20 passed, 0 failed.
+- Complete `DotNetWorker.Testing.Tests`: 39 passed, 0 failed.
+- `InvocationHandlerTests`: 15 passed, 0 failed.
+- Core builds netstandard2.0, net6.0, net8.0, net9.0, and net10.0 with zero warnings/errors.
+- Grpc builds netstandard2.0 and net6.0 through net10.0 with zero warnings/errors.
+- `DotNetWorker.Testing` builds net8.0, net9.0, and net10.0 with zero warnings/errors.
+
+## Remaining approved tasks
 - T05: explicit ASP.NET Core TestServer companion.
 - T06: transport conformance, Core Tools differential lane, stress, leaks, and benchmarks.
 - T07: solution/package integration, exact dependency policy, documentation, samples, and upstream handoff artifacts. No publication or external issue mutation is authorized.

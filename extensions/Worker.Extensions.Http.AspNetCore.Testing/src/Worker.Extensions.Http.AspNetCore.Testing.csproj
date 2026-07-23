@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <PackageId>Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore.Testing</PackageId>
+    <Description>ASP.NET Core TestServer integration for Azure Functions .NET isolated worker testing.</Description>
+    <AssemblyName>Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore.Testing</AssemblyName>
+    <RootNamespace>Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore.Testing</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <MajorProductVersion>1</MajorProductVersion>
+    <MinorProductVersion>0</MinorProductVersion>
+    <PatchProductVersion>0</PatchProductVersion>
+    <VersionSuffix>-preview.1</VersionSuffix>
+  </PropertyGroup>
+
+  <Import Project="..\..\..\build\Common.props" />
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="8.0.29" Condition="'$(TargetFramework)' == 'net8.0'" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.10" Condition="'$(TargetFramework)' == 'net10.0'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Worker.Extensions.Http.AspNetCore\src\Worker.Extensions.Http.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\..\src\DotNetWorker.Testing\DotNetWorker.Testing.csproj" />
+  </ItemGroup>
+
+</Project>
