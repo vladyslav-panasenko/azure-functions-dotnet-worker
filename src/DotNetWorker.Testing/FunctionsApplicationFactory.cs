@@ -80,6 +80,9 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
     /// <summary>Gets the started application's service provider.</summary>
     public IServiceProvider Services => GetState().Services;
 
+    /// <summary>Gets the worker-only capability boundary for this factory.</summary>
+    public FunctionsTestCapabilities Capabilities => FunctionsTestCapabilities.WorkerOnly;
+
     /// <summary>Invokes a named function through the worker's production invocation pipeline.</summary>
     public async Task<FunctionInvocationResult> InvokeAsync(
         string functionName,
@@ -461,7 +464,7 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
             await protocol.InitializeAsync(contentRoot, _options.StartupTimeout, startup.Token);
             return new FactoryState(host, protocol);
         }
-        catch
+        catch (Exception exception)
         {
             await protocol.DisposeAsync();
             if (host is IAsyncDisposable asyncDisposable)
@@ -471,6 +474,13 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
             else
             {
                 host.Dispose();
+            }
+
+            if (exception is OperationCanceledException && startup.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"The function application did not start within {_options.StartupTimeout}.",
+                    exception);
             }
 
             throw;

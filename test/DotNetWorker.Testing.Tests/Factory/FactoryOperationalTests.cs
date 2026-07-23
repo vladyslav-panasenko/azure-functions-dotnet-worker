@@ -25,7 +25,7 @@ public class FactoryOperationalTests
         TimeoutException exception = await Assert.ThrowsAsync<TimeoutException>(
             () => Task.Run(() => _ = factory.Services));
 
-        Assert.Contains("connect", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("start", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

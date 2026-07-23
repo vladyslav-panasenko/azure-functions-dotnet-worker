@@ -53,6 +53,11 @@ if (-not $RuntimeOnly) {
 }
 
 if (-not $TransportOnly) {
+    $repoCoreTools = Join-Path $root 'Azure.Functions.Cli'
+    if (Test-Path (Join-Path $repoCoreTools $(if ($IsWindows) { 'func.exe' } else { 'func' }))) {
+        $env:PATH = "$repoCoreTools$([IO.Path]::PathSeparator)$env:PATH"
+    }
+
     $func = Get-Command func -ErrorAction SilentlyContinue
     $azurite = Get-Command azurite -ErrorAction SilentlyContinue
     $azuriteListening = $false
@@ -96,7 +101,11 @@ if (-not $TransportOnly) {
             -Project (Join-Path $root 'test\extensions\Worker.Extensions.Http.AspNetCore.Testing.Tests\Worker.Extensions.Http.AspNetCore.Testing.Tests.csproj')
         Invoke-DotNetTest `
             -Project (Join-Path $root 'test\E2ETests\E2ETests\E2ETests.csproj') `
-            -Filter 'FullyQualifiedName~HttpTriggerTests|FullyQualifiedName~QueueTriggerAndOutput_Succeeds|FullyQualifiedName~CancellationEndToEndTests' `
+            -Filter 'FullyQualifiedName~RuntimeDifferential_BuiltInHttp|FullyQualifiedName~QueueTriggerAndOutput_Succeeds' `
+            -NoBuild
+        Invoke-DotNetTest `
+            -Project (Join-Path $root 'test\E2ETests\E2ETests\E2ETests.csproj') `
+            -Filter 'FullyQualifiedName~RuntimeDifferential_AspNetCoreHttp' `
             -NoBuild
 
         $runtimeReport = [ordered]@{

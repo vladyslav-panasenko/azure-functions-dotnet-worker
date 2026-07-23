@@ -40,14 +40,14 @@ public class InMemoryFunctionsHostProtocolTests
     }
 
     [Fact]
-    public async Task Protocol_RequestBeforeConnectionFails()
+    public async Task Protocol_MissingConnectionHonorsStartupTimeout()
     {
         await using var host = new InMemoryFunctionsHost(TestTimeout, 1024 * 1024);
 
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            host.InitializeAsync("c:\functions", TestTimeout));
+        TimeoutException exception = await Assert.ThrowsAsync<TimeoutException>(() =>
+            host.InitializeAsync("c:\functions", TimeSpan.FromMilliseconds(100)));
 
-        Assert.Contains("Connected", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("connect", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

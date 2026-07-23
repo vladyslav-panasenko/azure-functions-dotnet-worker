@@ -60,6 +60,34 @@ public class BuiltInHttpTests
     }
 
     [Fact]
+    public async Task BuiltInHttp_DoesNotEnforceHostAuthorization()
+    {
+        await using var factory = CreateFactory();
+        using HttpClient client = factory.CreateHttpClient("AuthorizedEcho");
+
+        using HttpResponseMessage response = await client.PostAsync(
+            "/any-url-without-a-function-key",
+            new StringContent("authorized-payload"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("authorized-payload", await response.Content.ReadAsStringAsync());
+        Assert.False(factory.Capabilities.SupportsAuthorization);
+    }
+
+    [Fact]
+    public void Capabilities_DeclareEveryHostOwnedBehaviorUnavailable()
+    {
+        using var factory = CreateFactory();
+
+        Assert.False(factory.Capabilities.SupportsBuiltInUrlRouting);
+        Assert.False(factory.Capabilities.SupportsAuthorization);
+        Assert.False(factory.Capabilities.SupportsTriggerListeners);
+        Assert.False(factory.Capabilities.SupportsMessageSettlement);
+        Assert.False(factory.Capabilities.SupportsRetryScheduling);
+        Assert.StartsWith("https://", factory.Capabilities.FullHostTestingGuidance, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuiltInHttp_InvalidBaseAddressFailsBeforeFactoryStartup()
     {
         using var factory = CreateFactory();

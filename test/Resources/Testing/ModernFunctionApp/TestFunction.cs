@@ -89,6 +89,15 @@ public sealed class TestFunction(ILogger<TestFunction> logger)
             Output = $"output:{request}"
         };
 
+    [Function("AuthorizedEcho")]
+    public async Task<HttpResponseData> AuthorizedEcho(
+        [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequestData request)
+    {
+        HttpResponseData response = request.CreateResponse(HttpStatusCode.OK);
+        await request.Body.CopyToAsync(response.Body);
+        return response;
+    }
+
     [Function("NonHttpFunction")]
     public string NonHttpFunction([TestTrigger] string value) => value;
 }

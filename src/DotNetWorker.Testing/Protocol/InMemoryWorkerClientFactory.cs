@@ -75,11 +75,11 @@ internal sealed class InMemoryWorkerClientFactory : IWorkerClientFactory, IAsync
             _startCancellationRegistration = cancellationToken.Register(
                 static state => ((CancellationTokenSource)state!).Cancel(),
                 _shutdown);
+            _host.Connect(_messageProcessor);
             await _host.AcceptWorkerMessageAsync(new StreamingMessage
             {
                 StartStream = new StartStream { WorkerId = InMemoryFunctionsHost.TestWorkerId }
             });
-            _host.Connect(_messageProcessor);
             _logPump = PumpLogsAsync(_shutdown.Token);
         }
 
