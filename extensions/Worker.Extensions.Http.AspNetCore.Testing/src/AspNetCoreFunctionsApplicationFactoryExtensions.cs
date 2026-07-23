@@ -3,6 +3,7 @@
 
 using System;
 using System.Linq;
+using System.Reflection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Azure.Functions.Worker.Core.FunctionMetadata;
@@ -28,6 +29,15 @@ public static class AspNetCoreFunctionsApplicationFactoryExtensions
         where TEntryPoint : class
     {
         ArgumentNullException.ThrowIfNull(factory);
+        Assembly companionAssembly = typeof(AspNetCoreFunctionsApplicationFactoryExtensions).Assembly;
+        AssemblyCompatibilityValidator.ValidateReferencedAssembly(
+            companionAssembly,
+            typeof(FunctionsApplicationFactory<TEntryPoint>).Assembly);
+        AssemblyCompatibilityValidator.ValidateReferencedAssembly(
+            companionAssembly,
+            typeof(FunctionsEndpointDataSource).Assembly);
+        AssemblyCompatibilityValidator.ValidateReferencedAssembly(companionAssembly, typeof(TestServer).Assembly);
+
         return factory.WithHttpCompanion(ActivationId, builder =>
         {
             builder.ConfigureWebHost(webBuilder => webBuilder.UseTestServer());

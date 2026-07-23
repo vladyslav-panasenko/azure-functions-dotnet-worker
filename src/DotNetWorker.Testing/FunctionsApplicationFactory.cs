@@ -389,6 +389,7 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         _options.Validate();
+        ValidatePackageCompatibility();
 
         Assembly applicationAssembly = typeof(TEntryPoint).Assembly;
         if (applicationAssembly.EntryPoint is null)
@@ -502,6 +503,16 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
         }
 
         return Path.GetFullPath(location);
+    }
+
+    private static void ValidatePackageCompatibility()
+    {
+        Assembly testingAssembly = typeof(FunctionsApplicationFactory<TEntryPoint>).Assembly;
+        AssemblyCompatibilityValidator.ValidateReferencedAssembly(testingAssembly, typeof(FunctionContext).Assembly);
+        AssemblyCompatibilityValidator.ValidateReferencedAssembly(
+            testingAssembly,
+            typeof(Microsoft.Extensions.Hosting.WorkerHostBuilderExtensions).Assembly);
+        AssemblyCompatibilityValidator.ValidateReferencedAssembly(testingAssembly, typeof(GrpcWorker).Assembly);
     }
 
     private static void ValidateFunctionOutput(string contentRoot)

@@ -12,14 +12,25 @@
     <MinorProductVersion>0</MinorProductVersion>
     <PatchProductVersion>0</PatchProductVersion>
     <VersionSuffix>-preview.1</VersionSuffix>
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <Import Project="..\..\build\Common.props" />
+  <Import Project="..\..\build\WorkerTestingCompatibility.props" />
+  <Import Project="..\..\build\WorkerTestingPack.targets" />
 
   <ItemGroup>
-    <ProjectReference Include="..\DotNetWorker.Core\DotNetWorker.Core.csproj" />
-    <ProjectReference Include="..\DotNetWorker.Grpc\DotNetWorker.Grpc.csproj" />
-    <ProjectReference Include="..\DotNetWorker\DotNetWorker.csproj" />
+    <ProjectReference Include="..\DotNetWorker.Core\DotNetWorker.Core.csproj" Version="[$(WorkerTestingCompatibleWorkerVersion)]" />
+    <ProjectReference Include="..\DotNetWorker.Grpc\DotNetWorker.Grpc.csproj" Version="[$(WorkerTestingCompatibleGrpcVersion)]" />
+    <ProjectReference Include="..\DotNetWorker\DotNetWorker.csproj" Version="[$(WorkerTestingCompatibleWorkerVersion)]" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="$(_WorkerTestingGeneratedCompatibilityProps)"
+          Pack="true"
+          PackagePath="buildTransitive\Microsoft.Azure.Functions.Worker.Testing.props" />
   </ItemGroup>
 
 </Project>

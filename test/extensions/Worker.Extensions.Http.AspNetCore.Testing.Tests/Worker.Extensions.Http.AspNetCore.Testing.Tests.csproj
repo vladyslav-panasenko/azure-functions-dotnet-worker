@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <IsPackable>false</IsPackable>
     <AssemblyName>Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore.Testing.Tests</AssemblyName>
     <RootNamespace>Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore.Testing.Tests</RootNamespace>
