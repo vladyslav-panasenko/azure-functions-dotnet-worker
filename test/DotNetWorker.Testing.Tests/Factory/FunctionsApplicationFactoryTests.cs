@@ -187,6 +187,21 @@ public class FunctionsApplicationFactoryTests
         Assert.Throws<ObjectDisposedException>(() => _ = factory.Services);
     }
 
+    [Fact]
+    public async Task Factory_RepeatedStartStopDoesNotLeakApplicationIdentity()
+    {
+        for (int iteration = 0; iteration < 20; iteration++)
+        {
+            await using var factory = new FunctionsApplicationFactory<ModernFunctionApp.Program>()
+                .WithContentRoot(GetFunctionOutput("ModernFunctionApp"));
+
+            Assert.Equal(
+                InMemoryFunctionsHostState.Ready,
+                factory.Services.GetRequiredService<InMemoryFunctionsHost>().State);
+        }
+
+    }
+
     private static string GetFunctionOutput(string projectName)
         => Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory,

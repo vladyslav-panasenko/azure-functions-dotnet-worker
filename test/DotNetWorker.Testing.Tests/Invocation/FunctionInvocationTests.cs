@@ -289,6 +289,36 @@ public class FunctionInvocationTests
             factory.InvokeAsync("missing", FunctionInvocationRequest.Create()));
     }
 
+    [Fact]
+    public async Task Invocation_ThousandInvocationsRemainCorrelatedUnderBoundedConcurrency()
+    {
+        await using var factory = CreateFactory();
+        const int invocationCount = 1_000;
+        const int batchSize = 50;
+
+        for (int offset = 0; offset < invocationCount; offset += batchSize)
+        {
+            Task<FunctionInvocationResult>[] batch = Enumerable.Range(offset, batchSize)
+                .Select(index => factory.InvokeAsync(
+                    "GenericEcho",
+                    FunctionInvocationRequest.Create()
+                        .WithInput("request", FunctionTestValue.String($"value-{index}"))
+                        .WithInvocationId($"stress-{index}")))
+                .ToArray();
+
+            FunctionInvocationResult[] results = await Task.WhenAll(batch);
+            for (int index = 0; index < results.Length; index++)
+            {
+                int expected = offset + index;
+                Assert.Equal($"stress-{expected}", results[index].InvocationId);
+                Assert.Equal(FunctionInvocationStatus.Succeeded, results[index].Status);
+                Assert.Equal(
+                    $"value-{expected}",
+                    Assert.IsType<FunctionTestValue.StringValue>(results[index].ReturnValue).Value);
+            }
+        }
+    }
+
     private static FunctionsApplicationFactory<ModernFunctionApp.Program> CreateFactory()
         => new FunctionsApplicationFactory<ModernFunctionApp.Program>()
             .WithContentRoot(GetFunctionOutput());

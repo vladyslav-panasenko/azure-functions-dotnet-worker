@@ -58,9 +58,13 @@ public class AspNetCoreFactoryTests
 
         using HttpResponseMessage missing = await client.GetAsync("/api/missing");
         using HttpResponseMessage wrongMethod = await client.GetAsync("/api/orders/42");
+        using HttpResponseMessage failedConstraint = await client.PostAsJsonAsync(
+            "/api/orders/not-an-int",
+            new { Name = "invalid" });
 
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
         Assert.Equal(HttpStatusCode.MethodNotAllowed, wrongMethod.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, failedConstraint.StatusCode);
     }
 
     [Fact]
@@ -128,6 +132,63 @@ public class AspNetCoreFactoryTests
             () => client.GetAsync("/api/cancel", cancellation.Token));
     }
 
+    [Fact]
+    public async Task CreateClient_UserFunctionFailureIncludesFunctionDiagnostics()
+    {
+        await using var factory = CreateFactory().WithAspNetCore();
+        using HttpClient client = factory.CreateClient();
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.GetAsync("/api/fail"));
+
+        Assert.Contains("AspNetFail", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("ASP.NET fixture failure", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CreateClient_DefaultOptionsFollowRedirectAndHandleCookies()
+    {
+        await using var factory = CreateFactory().WithAspNetCore();
+        using HttpClient client = factory.CreateClient();
+
+        using HttpResponseMessage response = await client.GetAsync("/api/cookies/set");
+
+        response.EnsureSuccessStatusCode();
+        Assert.Equal("cookie-value", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task CreateClient_DisabledRedirectReturnsRedirectAndHandlerDisposalDoesNotStopFactory()
+    {
+        await using var factory = CreateFactory().WithAspNetCore();
+        using (HttpClient first = factory.CreateClient(new FunctionsTestClientOptions
+               {
+                   AllowAutoRedirect = false,
+                   HandleCookies = false
+               }))
+        {
+            using HttpResponseMessage redirect = await first.GetAsync("/api/cookies/set");
+            Assert.Equal(HttpStatusCode.Redirect, redirect.StatusCode);
+        }
+
+        using HttpClient second = factory.CreateClient();
+        using HttpResponseMessage response = await second.GetAsync("/api/results/alive");
+        response.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public void CreateClient_DuplicateProviderFailsBeforeReturningClient()
+    {
+        using var factory = CreateFactory()
+            .WithAspNetCore()
+            .WithServices(services =>
+                services.AddSingleton<IFunctionsTestHttpClientProvider, DuplicateProvider>());
+
+        NotSupportedException exception = Assert.Throws<NotSupportedException>(() => factory.CreateClient());
+
+        Assert.Contains("Multiple", exception.Message, StringComparison.Ordinal);
+    }
+
     private static FunctionsApplicationFactory<AspNetCoreFunctionApp.Program> CreateFactory()
         => new FunctionsApplicationFactory<AspNetCoreFunctionApp.Program>()
             .WithContentRoot(GetAspNetCoreFunctionOutput());
@@ -175,5 +236,11 @@ public class AspNetCoreFactoryTests
                 response.Dispose();
             }
         }
+    }
+
+    private sealed class DuplicateProvider : IFunctionsTestHttpClientProvider
+    {
+        public HttpMessageHandler CreateHandler(FunctionsTestClientOptions options)
+            => new HttpClientHandler();
     }
 }

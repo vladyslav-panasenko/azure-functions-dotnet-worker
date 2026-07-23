@@ -43,6 +43,19 @@ public sealed class TestFunctions(AppMarker marker)
         await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         return Results.Ok();
     }
+
+    [Function("AspNetCookieSet")]
+    public IResult CookieSet(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "cookies/set")] HttpRequest request)
+    {
+        request.HttpContext.Response.Cookies.Append("fixture-cookie", "cookie-value");
+        return Results.Redirect("/api/cookies/read");
+    }
+
+    [Function("AspNetCookieRead")]
+    public IResult CookieRead(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "cookies/read")] HttpRequest request)
+        => Results.Text(request.Cookies["fixture-cookie"] ?? "missing");
 }
 
 public sealed class OrderRequest

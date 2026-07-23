@@ -1,6 +1,6 @@
 # Isolated worker test factory implementation checkpoint
 
-Last updated: 2026-07-23T13:37:05Z
+Last updated: 2026-07-23T14:13:01Z
 
 ## Repository state
 
@@ -114,8 +114,27 @@ Verification completed:
 - Grpc builds netstandard2.0 and net6.0 through net10.0 with zero warnings/errors.
 - `DotNetWorker.Testing` builds net8.0, net9.0, and net10.0 with zero warnings/errors.
 
+## Completed: T05 ASP.NET Core TestServer companion
+
+Implemented:
+
+- Signed `Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore.Testing` companion targeting net8.0 and net10.0.
+- Explicit, idempotent `WithAspNetCore()` activation returning an independent unstarted clone.
+- `TestServer` replacement with no TCP listener or Kestrel fallback.
+- A narrow internal ASP.NET extension dispatch seam placed after real endpoint routing and before `WorkerRequestServicesMiddleware`.
+- Function endpoint ownership metadata, full route-constraint/method selection, framework-owned 404/405 behavior, and coordinator-backed invocation correlation.
+- Native ASP.NET body binding, route values, `IActionResult`, `IResult`, user middleware/services, cancellation, error diagnostics, concurrent requests, redirects, cookies, client options, handler lifetime, and provider-cardinality coverage.
+- Clear missing application registration, missing activation, repeated/late activation, server mismatch, and duplicate-provider failures.
+
+Verification completed:
+
+- Companion tests: 12 passed on net8.0 and 12 passed on net10.0.
+- Companion build: net8.0 and net10.0 with zero warnings/errors.
+- Complete `DotNetWorker.Testing.Tests`: 39 passed, 0 failed.
+- Existing non-analyzer ASP.NET Core extension regressions: 27 passed, 0 failed.
+- The complete existing ASP.NET Core extension suite has 43 passing and three unrelated code-fix failures caused by CRLF/LF expectations on this Windows checkout.
+
 ## Remaining approved tasks
-- T05: explicit ASP.NET Core TestServer companion.
 - T06: transport conformance, Core Tools differential lane, stress, leaks, and benchmarks.
 - T07: solution/package integration, exact dependency policy, documentation, samples, and upstream handoff artifacts. No publication or external issue mutation is authorized.
 

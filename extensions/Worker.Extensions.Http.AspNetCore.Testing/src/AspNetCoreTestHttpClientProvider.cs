@@ -22,5 +22,5 @@ internal sealed class AspNetCoreTestHttpClientProvider : IFunctionsTestHttpClien
     }
 
     public HttpMessageHandler CreateHandler(FunctionsTestClientOptions options)
-        => _server.CreateHandler();
+        => new AspNetCoreTestClientHandler(_server.CreateHandler(), options);
 }

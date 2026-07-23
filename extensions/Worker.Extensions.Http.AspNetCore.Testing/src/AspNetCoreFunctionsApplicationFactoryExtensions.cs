@@ -10,6 +10,7 @@ using Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore;
 using Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore.AspNetMiddleware;
 using Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Microsoft.Azure.Functions.Worker.Testing;
@@ -38,12 +39,11 @@ public static class AspNetCoreFunctionsApplicationFactoryExtensions
                         "WithAspNetCore() requires the function application to call ConfigureFunctionsWebApplication().");
                 }
 
-                services.AddSingleton<FunctionsEndpointDataSource>(provider =>
+                services.Replace(ServiceDescriptor.Singleton<FunctionsEndpointDataSource>(provider =>
                     new FunctionsEndpointDataSource(
                         provider.GetRequiredService<IFunctionMetadataManager>(),
-                        provider.GetRequiredService<IFunctionsTestInvocationDispatcher>().ApplicationDirectory));
-                services.AddSingleton<FunctionsTestingDispatchMiddleware>();
-                services.AddSingleton<Microsoft.AspNetCore.Hosting.IStartupFilter, FunctionsTestingStartupFilter>();
+                        provider.GetRequiredService<IFunctionsTestInvocationDispatcher>().ApplicationDirectory)));
+                services.AddSingleton<IFunctionsHttpRequestDispatcher, FunctionsTestingDispatchMiddleware>();
                 services.AddSingleton<IFunctionsTestHttpClientProvider, AspNetCoreTestHttpClientProvider>();
             });
         });

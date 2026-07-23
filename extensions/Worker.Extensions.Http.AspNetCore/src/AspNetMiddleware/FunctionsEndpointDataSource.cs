@@ -118,6 +118,7 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore.AspNetMidd
                         DisplayName = functionName
                     };
 
+                    endpointBuilder.Metadata.Add(new FunctionEndpointMetadata(functionName));
                     var methods = functionBinding.Methods ?? [];
                     endpointBuilder.Metadata.Add(new HttpMethodMetadata(methods));
 
@@ -147,5 +148,15 @@ namespace Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore.AspNetMidd
             var hostJson = JsonSerializer.Deserialize<HostJsonModel>(hostJsonString, _jsonSerializerOptions);
             return hostJson?.Extensions?.Http?.RoutePrefix;
         }
+    }
+
+    internal sealed class FunctionEndpointMetadata
+    {
+        internal FunctionEndpointMetadata(string functionName)
+        {
+            FunctionName = functionName;
+        }
+
+        internal string FunctionName { get; }
     }
 }
