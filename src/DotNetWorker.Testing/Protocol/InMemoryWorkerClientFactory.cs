@@ -65,7 +65,7 @@ internal sealed class InMemoryWorkerClientFactory : IWorkerClientFactory, IAsync
             _messageProcessor = messageProcessor ?? throw new ArgumentNullException(nameof(messageProcessor));
         }
 
-        public Task StartAsync(CancellationToken cancellationToken)
+        public async Task StartAsync(CancellationToken cancellationToken)
         {
             if (Interlocked.Exchange(ref _started, 1) != 0)
             {
@@ -75,9 +75,12 @@ internal sealed class InMemoryWorkerClientFactory : IWorkerClientFactory, IAsync
             _startCancellationRegistration = cancellationToken.Register(
                 static state => ((CancellationTokenSource)state!).Cancel(),
                 _shutdown);
+            await _host.AcceptWorkerMessageAsync(new StreamingMessage
+            {
+                StartStream = new StartStream { WorkerId = InMemoryFunctionsHost.TestWorkerId }
+            });
             _host.Connect(_messageProcessor);
             _logPump = PumpLogsAsync(_shutdown.Token);
-            return Task.CompletedTask;
         }
 
         public ValueTask SendMessageAsync(StreamingMessage message)

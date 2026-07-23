@@ -16,13 +16,17 @@ namespace Microsoft.Azure.Functions.Worker.Testing.Protocol;
 
 internal sealed class InMemoryFunctionsHost : IAsyncDisposable
 {
+    internal const string TestWorkerId = "testing-worker";
+
     private readonly object _stateLock = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource<StreamingMessage>> _pendingRequests = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _activeInvocations = new(StringComparer.Ordinal);
     private readonly ConcurrentQueue<RpcLog> _logs = new();
+    private readonly ConcurrentQueue<ProtocolTranscriptEntry> _transcript = new();
+    private readonly TaskCompletionSource _connected = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeSpan _shutdownTimeout;
     private readonly int _maximumMessageLength;
-    private IMessageProcessor? _messageProcessor;
+    private Func<StreamingMessage, Task>? _sendToWorker;
     private string? _functionAppDirectory;
     private IReadOnlyList<RpcFunctionMetadata> _functionMetadata = Array.Empty<RpcFunctionMetadata>();
     private InMemoryFunctionsHostState _state;
@@ -58,16 +62,27 @@ internal sealed class InMemoryFunctionsHost : IAsyncDisposable
 
     internal IReadOnlyCollection<RpcLog> Logs => new ReadOnlyCollection<RpcLog>(_logs.ToArray());
 
+    internal IReadOnlyList<ProtocolTranscriptEntry> Transcript
+        => Array.AsReadOnly(_transcript.ToArray());
+
     internal void Connect(IMessageProcessor messageProcessor)
     {
         ArgumentNullException.ThrowIfNull(messageProcessor);
+        Connect(messageProcessor.ProcessMessageAsync);
+    }
+
+    internal void Connect(Func<StreamingMessage, Task> sendToWorker)
+    {
+        ArgumentNullException.ThrowIfNull(sendToWorker);
 
         lock (_stateLock)
         {
             EnsureState(InMemoryFunctionsHostState.Created);
-            _messageProcessor = messageProcessor;
+            _sendToWorker = sendToWorker;
             _state = InMemoryFunctionsHostState.Connected;
         }
+
+        _connected.TrySetResult();
     }
 
     internal async Task InitializeAsync(string functionAppDirectory, TimeSpan timeout, CancellationToken cancellationToken = default)
@@ -78,6 +93,15 @@ internal sealed class InMemoryFunctionsHost : IAsyncDisposable
         }
 
         ValidateTimeout(timeout);
+        try
+        {
+            await _connected.Task.WaitAsync(timeout, cancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            throw new TimeoutException($"The worker did not connect within {timeout}.");
+        }
+
         _functionAppDirectory = functionAppDirectory;
         Transition(InMemoryFunctionsHostState.Connected, InMemoryFunctionsHostState.Initializing);
 
@@ -235,6 +259,7 @@ internal sealed class InMemoryFunctionsHost : IAsyncDisposable
     internal ValueTask AcceptWorkerMessageAsync(StreamingMessage message)
     {
         ArgumentNullException.ThrowIfNull(message);
+        _transcript.Enqueue(new ProtocolTranscriptEntry(false, message.Clone()));
 
         if (message.CalculateSize() > _maximumMessageLength)
         {
@@ -303,18 +328,19 @@ internal sealed class InMemoryFunctionsHost : IAsyncDisposable
         CancellationToken cancellationToken,
         bool allowStopping = false)
     {
-        IMessageProcessor processor;
+        Func<StreamingMessage, Task> sendToWorker;
         lock (_stateLock)
         {
-            if (_messageProcessor is null || (_state == InMemoryFunctionsHostState.Stopping && !allowStopping))
+            if (_sendToWorker is null || (_state == InMemoryFunctionsHostState.Stopping && !allowStopping))
             {
                 throw new InvalidOperationException($"The in-memory worker session cannot send messages while in state '{_state}'.");
             }
 
-            processor = _messageProcessor;
+            sendToWorker = _sendToWorker;
         }
 
         request.RequestId = Guid.NewGuid().ToString("N");
+        _transcript.Enqueue(new ProtocolTranscriptEntry(true, request.Clone()));
         int messageLength = request.CalculateSize();
         if (messageLength > _maximumMessageLength)
         {
@@ -333,7 +359,7 @@ internal sealed class InMemoryFunctionsHost : IAsyncDisposable
             using IDisposable? directoryScope = _functionAppDirectory is null
                 ? null
                 : WorkerApplicationDirectoryContext.Push(_functionAppDirectory);
-            await processor.ProcessMessageAsync(request);
+            await sendToWorker(request);
             return await completion.Task.WaitAsync(timeout, cancellationToken);
         }
         catch (TimeoutException)
@@ -431,3 +457,5 @@ internal sealed class InMemoryFunctionsHost : IAsyncDisposable
         }
     }
 }
+
+internal sealed record ProtocolTranscriptEntry(bool HostToWorker, StreamingMessage Message);

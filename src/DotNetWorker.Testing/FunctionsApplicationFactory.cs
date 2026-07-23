@@ -37,6 +37,8 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
     private readonly FunctionsApplicationFactoryOptions _options;
     private readonly string? _contentRoot;
     private readonly IReadOnlySet<string> _httpCompanionActivations;
+    private readonly Uri? _serializedGrpcEndpoint;
+    private readonly Action<InMemoryFunctionsHost>? _serializedGrpcProtocolConfiguration;
     private readonly Lazy<Task<FactoryState>> _startup;
     private int _disposed;
 
@@ -48,7 +50,9 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
             new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase),
             new FunctionsApplicationFactoryOptions(),
             contentRoot: null,
-            new HashSet<string>(StringComparer.Ordinal))
+            new HashSet<string>(StringComparer.Ordinal),
+            serializedGrpcEndpoint: null,
+            serializedGrpcProtocolConfiguration: null)
     {
     }
 
@@ -58,7 +62,9 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
         IReadOnlyDictionary<string, string?> settings,
         FunctionsApplicationFactoryOptions options,
         string? contentRoot,
-        IReadOnlySet<string> httpCompanionActivations)
+        IReadOnlySet<string> httpCompanionActivations,
+        Uri? serializedGrpcEndpoint,
+        Action<InMemoryFunctionsHost>? serializedGrpcProtocolConfiguration)
     {
         _hostConfigurations = hostConfigurations;
         _serviceConfigurations = serviceConfigurations;
@@ -66,6 +72,8 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
         _options = options;
         _contentRoot = contentRoot;
         _httpCompanionActivations = httpCompanionActivations;
+        _serializedGrpcEndpoint = serializedGrpcEndpoint;
+        _serializedGrpcProtocolConfiguration = serializedGrpcProtocolConfiguration;
         _startup = new Lazy<Task<FactoryState>>(StartAsync, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
@@ -227,6 +235,39 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
             httpCompanionActivations: activations);
     }
 
+    internal FunctionsApplicationFactory<TEntryPoint> WithSerializedGrpcTransport(
+        Uri endpoint,
+        Action<InMemoryFunctionsHost> configureProtocol)
+    {
+        ArgumentNullException.ThrowIfNull(endpoint);
+        ArgumentNullException.ThrowIfNull(configureProtocol);
+        EnsureCanConfigure();
+        if (!endpoint.IsAbsoluteUri || endpoint.Scheme != Uri.UriSchemeHttp)
+        {
+            throw new ArgumentException("The loopback gRPC endpoint must be an absolute HTTP URI.", nameof(endpoint));
+        }
+
+        var settings = new Dictionary<string, string?>(_settings, StringComparer.OrdinalIgnoreCase)
+        {
+            ["Functions:Worker:HostEndpoint"] = endpoint.AbsoluteUri,
+            ["Functions:Worker:WorkerId"] = InMemoryFunctionsHost.TestWorkerId,
+            ["Functions:Worker:RequestId"] = "testing-loopback-request",
+            ["Functions:Worker:GrpcMaxMessageLength"] = _options.MaxMessageLength.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+        return Clone(
+            settings: settings,
+            serializedGrpcEndpoint: endpoint,
+            serializedGrpcProtocolConfiguration: configureProtocol);
+    }
+
+    internal FunctionsApplicationFactory<TEntryPoint> WithProtocolObserver(
+        Action<InMemoryFunctionsHost> observeProtocol)
+    {
+        ArgumentNullException.ThrowIfNull(observeProtocol);
+        EnsureCanConfigure();
+        return Clone(serializedGrpcProtocolConfiguration: observeProtocol);
+    }
+
     /// <inheritdoc />
     public void Dispose()
     {
@@ -357,6 +398,7 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
         ValidateFunctionOutput(contentRoot);
 
         var protocol = new InMemoryFunctionsHost(_options.ShutdownTimeout, _options.MaxMessageLength);
+        _serializedGrpcProtocolConfiguration?.Invoke(protocol);
         var builder = new DeferredFunctionsHostBuilder();
         builder.UseEnvironment(_options.EnvironmentName);
         builder.UseContentRoot(contentRoot);
@@ -390,9 +432,12 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
                     protocol,
                     contentRoot,
                     _options.InvocationTimeout));
-            services.AddSingleton<InMemoryWorkerClientFactory>();
-            services.Replace(ServiceDescriptor.Singleton<IWorkerClientFactory>(provider =>
-                provider.GetRequiredService<InMemoryWorkerClientFactory>()));
+            if (_serializedGrpcEndpoint is null)
+            {
+                services.AddSingleton<InMemoryWorkerClientFactory>();
+                services.Replace(ServiceDescriptor.Singleton<IWorkerClientFactory>(provider =>
+                    provider.GetRequiredService<InMemoryWorkerClientFactory>()));
+            }
         });
 
         Func<string[], object>? hostFactory = HostFactoryResolver.ResolveHostFactory(
@@ -537,14 +582,18 @@ public class FunctionsApplicationFactory<TEntryPoint> : IDisposable, IAsyncDispo
         FunctionsApplicationFactoryOptions? options = null,
         string? contentRoot = null,
         bool replaceContentRoot = false,
-        IReadOnlySet<string>? httpCompanionActivations = null)
+        IReadOnlySet<string>? httpCompanionActivations = null,
+        Uri? serializedGrpcEndpoint = null,
+        Action<InMemoryFunctionsHost>? serializedGrpcProtocolConfiguration = null)
         => new(
             hostConfigurations ?? _hostConfigurations,
             serviceConfigurations ?? _serviceConfigurations,
             settings ?? _settings,
             options ?? _options.Clone(),
             replaceContentRoot ? contentRoot : _contentRoot,
-            httpCompanionActivations ?? _httpCompanionActivations);
+            httpCompanionActivations ?? _httpCompanionActivations,
+            serializedGrpcEndpoint ?? _serializedGrpcEndpoint,
+            serializedGrpcProtocolConfiguration ?? _serializedGrpcProtocolConfiguration);
 
     private static IReadOnlyList<T> Append<T>(IReadOnlyList<T> source, T item)
     {
