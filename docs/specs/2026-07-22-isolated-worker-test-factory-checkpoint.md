@@ -134,6 +134,20 @@ Verification completed:
 - Existing non-analyzer ASP.NET Core extension regressions: 27 passed, 0 failed.
 - The complete existing ASP.NET Core extension suite has 43 passing and three unrelated code-fix failures caused by CRLF/LF expectations on this Windows checkout.
 
+## In progress: T06 conformance, failure, and performance gates
+
+Implemented:
+
+- A 1,000-invocation bounded-concurrency test covering invocation ID, success status, and return-payload correlation.
+- Twenty complete factory start/stop cycles covering deterministic lifecycle cleanup.
+
+Verification completed:
+
+- Focused T06 durability gates: 2 passed, 0 failed.
+- Complete `DotNetWorker.Testing.Tests`: 41 passed, 0 failed.
+
+Resume T06 with the serialized loopback gRPC runner and fixed normalization comparer. Then add the separate Core Tools/Azurite differential report, explicit capability negatives, leak accounting, cross-platform CI lanes, and startup/warm-invocation benchmarks. Do not broaden normalization or exclusions without a new approved plan.
+
 ## Remaining approved tasks
 - T06: transport conformance, Core Tools differential lane, stress, leaks, and benchmarks.
 - T07: solution/package integration, exact dependency policy, documentation, samples, and upstream handoff artifacts. No publication or external issue mutation is authorized.
