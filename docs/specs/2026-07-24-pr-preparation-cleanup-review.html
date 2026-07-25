@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Isolated worker testing PR preparation, cleanup, and review — Implementation Plan</title>
+<style>
+:root{--bg:#1c1c1e;--surface:#252528;--border:#44444a;--text:#f4f3f0;--muted:#aaa9a4;--accent:#e0c997;--ok:#7bb08a;--warn:#c9a15e;--info:#7fa8c9}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.58 "Segoe UI",Arial,sans-serif}.page{max-width:1500px;margin:auto;padding:36px 30px 80px}.layout{display:grid;grid-template-columns:220px 1fr;gap:42px}.toc{position:sticky;top:24px;align-self:start}.toc a{display:block;color:var(--muted);padding:5px 8px;text-decoration:none;border-left:1px solid var(--border)}header{border-top:3px solid var(--accent);padding-top:24px}h1{font-size:38px;line-height:1.1;margin:0 0 12px}h2{font-size:21px;margin:0 0 18px}h3{font-size:15px;margin:24px 0 8px}section{padding:38px 0 16px;border-top:1px solid var(--border)}p,li{max-width:95ch}.summary{color:var(--muted);font-size:16px}.meta-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;margin-top:24px}.label{display:block;color:var(--muted);font-size:11px;text-transform:uppercase}.value{display:block;margin-top:3px}.status{display:inline-block;border:1px solid currentColor;border-radius:999px;padding:3px 9px;font-size:12px}.draft,.not-started{color:var(--muted)}.approved,.done{color:var(--ok)}.in-progress{color:var(--info)}.review{color:var(--warn)}table{width:100%;border-collapse:collapse;background:var(--surface);font-size:13px}th,td{padding:10px 12px;text-align:left;vertical-align:top;border:1px solid var(--border)}th{color:var(--muted)}code,pre{font-family:Consolas,monospace}code{overflow-wrap:anywhere}pre{white-space:pre-wrap;background:#202023;border:1px solid var(--border);padding:14px}.task{background:var(--surface);border:1px solid var(--border);padding:22px;margin:18px 0}.task-head{display:flex;justify-content:space-between}.task-layout{display:grid;grid-template-columns:1.3fr .7fr;gap:28px}.callout{border-left:3px solid var(--info);padding:12px 14px;background:var(--surface);margin-top:14px}.risk{border-left-color:var(--warn)}.mutable-zone{border-left:3px solid var(--border);padding-left:18px}@media(max-width:900px){.layout{grid-template-columns:1fr}.toc{position:static}.meta-grid,.task-layout{grid-template-columns:1fr 1fr}}@media(max-width:600px){.meta-grid,.task-layout{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<main class="page"><div class="layout">
+<aside class="toc"><strong>Contents</strong>
+<a href="#approval">Approval</a><a href="#goal">Goal</a><a href="#context-language">Language</a>
+<a href="#current-state">Current state</a><a href="#change-inventory">Inventory</a><a href="#proposed-design">Design</a>
+<a href="#dependency-contracts">Contracts</a><a href="#persistence-boundary">File ownership</a><a href="#task-graph">Task graph</a>
+<a href="#implementation-tasks">Tasks</a><a href="#handoff-review">Handoff review</a><a href="#testing-strategy">Verification</a>
+<a href="#rollout-operations">Operations</a><a href="#security-privacy">Conduct</a><a href="#risks-mitigations">Risks</a>
+<a href="#decision-log">Decisions</a><a href="#open-questions">Questions</a><a href="#final-verification">Checklist</a>
+</aside>
+<div>
+<header>
+<p>Implementation plan</p>
+<h1>Isolated worker testing PR preparation, cleanup, and review</h1>
+<p class="summary">Prepare a candid GitHub submission, prove the feature diff contains no accidental console writes, and independently analyze one high-value review finding before upstream review.</p>
+<!-- MUTABLE-START: lifecycle-summary -->
+<p><span data-field="baseline-status" class="status approved">Approved</span> <span data-field="execution-status" class="status in-progress">In Progress</span></p>
+<!-- MUTABLE-END: lifecycle-summary -->
+<div class="meta-grid">
+<div><span class="label">Spec ID</span><span class="value">IWTF-PR-2026-07-24</span></div>
+<div><span class="label">Plan version</span><span class="value">1</span></div>
+<div><span class="label">Specification readiness</span><span data-field="spec-readiness" class="value">Implementation Ready</span></div>
+<div><span class="label">Specification schema</span><span data-field="spec-schema-version" class="value">2</span></div>
+<div><span class="label">Owner</span><span class="value">Vladyslav Panasenko</span></div>
+<div><span class="label">Created</span><span class="value">2026-07-24</span></div>
+<div><span class="label">Target</span><span class="value">Upstream pull-request preparation</span></div>
+<div><span class="label">Branch</span><span class="value">feature/isolated-worker-test-factory</span></div>
+</div>
+</header>
+
+<!-- MUTABLE-START: approval -->
+<section id="approval" class="mutable-zone"><h2>Approval</h2>
+<div class="meta-grid">
+<div><span class="label">Approval status</span><span data-field="approval-status" class="status approved">Approved</span></div>
+<div><span class="label">Approver</span><span data-field="approver" class="value">Vladyslav Panasenko</span></div>
+<div><span class="label">Approved at</span><span data-field="approved-at" class="value">2026-07-25T07:08:23Z</span></div>
+<div><span class="label">Approval note</span><span data-field="approval-note" class="value">Approved; proceed with the console-write cleanup task.</span></div>
+<div><span class="label">Immutable body SHA-256</span><span data-field="immutable-body-sha256" class="value">090005cf352ff05f8f474643d64fc9b79546bb5d365a7f7658bf6cb892f3afac</span></div>
+</div><div class="callout risk">Only explicit approval freezes this baseline and authorizes implementation.</div></section>
+<!-- MUTABLE-END: approval -->
+
+<section id="goal"><h2>Goal</h2>
+<p>Create honest, useful PR materials that foreground the missing first-party testing capability, clean only accidental console output owned by this feature, and subject the large AI-authored change to one fresh, evidence-driven review analysis.</p>
+<h3>Success criteria</h3><ul>
+<li>A Markdown file contains one proposed GitHub title and a template-compatible description that accurately summarizes the implementation and fidelity boundaries.</li>
+<li>The description says “AI-implemented slop-fest” as candid disclosure, names Vladyslav Panasenko as the human submitter, invites aggressive technical challenge without self-insult, and explains why isolated Functions testing is more critical during AI-driven development.</li>
+<li>The description suggests evidence-backed reviewers, links issue #281, and asks participants to follow the Microsoft Open Source Code of Conduct.</li>
+<li>A base-to-HEAD added-line audit proves whether the feature introduced console writes; only confirmed feature-owned writes may be removed.</li>
+<li>A fresh review of the full feature diff produces one verified highest-severity actionable finding analysis, or an explicit no-finding result with reviewed risk areas and evidence.</li>
+</ul>
+<h3>Non-goals</h3><ul><li>Do not publish packages, open a PR, post issue comments, tag people externally, or fix the selected review finding in this execution.</li><li>Do not remove pre-existing console output, rewrite the completed testing design, or insult any contributor.</li></ul>
+</section>
+
+<section id="context-language"><h2>Context and language</h2>
+<table><thead><tr><th>Term</th><th>Meaning</th><th>Avoid</th></tr></thead><tbody>
+<tr><td>AI-implemented slop-fest</td><td>Deliberately candid disclosure that AI produced substantial code and that human maintainers should distrust and verify it.</td><td>Do not use it to waive evidence, excuse defects, or demean a person.</td></tr>
+<tr><td>Testing gap</td><td>The absence of an official WebApplicationFactory-like in-process testing package for .NET isolated Functions.</td><td>Do not claim the in-process layer reproduces Functions-host routing, authorization, listeners, settlement, retries, or scale.</td></tr>
+<tr><td>Review finding</td><td>A reproducible, code-located correctness, compatibility, lifecycle, packaging, or fidelity problem that survives false-positive checks.</td><td>Do not report style preference, speculation, or a known documented limitation as a defect.</td></tr>
+</tbody></table>
+<p>No canonical context file exists, and these terms are submission-local; no context-file change is planned.</p>
+</section>
+
+<section id="current-state"><h2>Current state and constraints</h2>
+<table><thead><tr><th>Area</th><th>Observed fact</th><th>Evidence</th></tr></thead><tbody>
+<tr><td>Feature state</td><td>T01–T07 are complete, committed, pushed, and documented.</td><td><code>docs/isolated-worker-test-factory-implementation-status.md</code>; HEAD <code>5613ef9ec</code></td></tr>
+<tr><td>Console audit</td><td>No changed file and no added diff line between base <code>34ce8e6f5</code> and HEAD contains <code>Console.Write*</code> or <code>System.Console.Write*</code>.</td><td>PowerShell bounded scan plus zero-context git diff scan</td></tr>
+<tr><td>GitHub convention</td><td>The local PR template asks for the linked issue, documentation/release-note/backport choices, tests, and additional information.</td><td><code>.github/pull_request_template.md</code></td></tr>
+<tr><td>Issue ownership</td><td>Issue #281 was opened by <code>@fabiocav</code>, is assigned to <code>@brettsam</code>, remains open, and asks for a public test worker and helpers adopted by worker tests.</td><td>GitHub issue #281 inspected 2026-07-24</td></tr>
+<tr><td>Conduct</td><td>The project adopts the Microsoft Open Source Code of Conduct.</td><td><code>CODE_OF_CONDUCT.md</code></td></tr>
+</tbody></table>
+</section>
+
+<section id="change-inventory"><h2>Change inventory</h2>
+<p><span class="label">Field posture</span><span data-field="field-posture" class="value">Brownfield</span></p>
+<table><thead><tr><th>Type</th><th>Item</th><th>Reason</th><th>Owner</th><th>Impact</th></tr></thead><tbody>
+<tr><td>Added</td><td>GitHub title and description Markdown</td><td>Give the author paste-ready, transparent submission text.</td><td><code>T01</code></td><td>Documentation only; no external side effect.</td></tr>
+<tr><td>Added</td><td>Focused review analysis Markdown</td><td>Make one fresh review result auditable before upstream review.</td><td><code>T03</code></td><td>Analysis only; a fix requires a later decision.</td></tr>
+<tr><td>Modified</td><td>Feature-owned source files, only if the audit finds a console write</td><td>Remove accidental direct console output.</td><td><code>T02</code></td><td>Expected N/A because reconnaissance found none; preserve intentional and pre-existing output.</td></tr>
+<tr><td>Removed</td><td>Feature-owned direct console writes, if found</td><td>Keep library and test infrastructure output disciplined.</td><td><code>T02</code></td><td>No compatibility window; revert the removal if targeted verification shows required behavior.</td></tr>
+</tbody></table><div class="callout risk">The main risk is manufacturing cleanup churn or an exaggerated review claim. Both require diff ownership and reproducible evidence.</div>
+</section>
+
+<section id="proposed-design"><h2>Proposed design</h2>
+<p>Produce two human-readable Markdown artifacts and one bounded cleanup audit. The PR text presents the gap first, the delivered surface and proof second, the AI disclosure third, and fidelity boundaries before asking for review. The review artifact separates observation, reproduction, impact, false-positive checks, and recommendation.</p>
+<table><thead><tr><th>Component</th><th>Responsibility</th><th>File</th></tr></thead><tbody>
+<tr><td>PR draft</td><td>Title, issue linkage, motivation, implementation summary, verification, limitations, AI disclosure, suggested reviewers, conduct reminder, and checklist.</td><td><code>docs/github-pr-isolated-worker-testing.md</code></td></tr>
+<tr><td>Console audit</td><td>Compare only base-to-HEAD changed and added lines; remove confirmed feature-owned writes or record no change required.</td><td>Bounded by <code>git diff 34ce8e6f5..HEAD</code></td></tr>
+<tr><td>Review analysis</td><td>Deeply validate one highest-severity result across the complete feature diff.</td><td><code>docs/reviews/2026-07-24-isolated-worker-test-factory-review.md</code></td></tr>
+</tbody></table>
+<h3>PR copy contract</h3>
+<pre><code>Title: Add official in-process testing support for .NET isolated worker
+
+Description order:
+1. Resolves #281 and states the missing testing gap.
+2. Explains why the gap is critical, especially with AI-driven code generation.
+3. Summarizes the two packages, samples, conformance evidence, and explicit host-owned exclusions.
+4. Discloses: “This is an AI-implemented slop-fest, submitted by Vladyslav Panasenko.”
+5. Immediately clarifies that the label is an invitation to distrust, inspect, and improve the code—not an excuse or insult.
+6. Suggests @fabiocav and @brettsam based on issue ownership; optionally mentions @satvu for recent protocol/HTTP context.
+7. Requests direct, specific feedback under the Microsoft Open Source Code of Conduct.
+8. Completes every applicable local PR-template checkbox honestly.</code></pre>
+</section>
+
+<section id="dependency-contracts"><h2>Dependency contracts</h2>
+<table><thead><tr><th>ID</th><th>Seam</th><th>Source of truth</th><th>Operation and constraints</th><th>Verification</th><th>Tasks</th></tr></thead><tbody>
+<tr><td><code>C01</code></td><td>GitHub PR format and issue linkage</td><td><code>.github/pull_request_template.md</code> and issue #281</td><td>Generate inert Markdown only. Use <code>Resolves #281</code>; do not open a PR, comment, request review, or mutate GitHub.</td><td>Every template section is present and the issue title/owners match the inspected page.</td><td>T01</td></tr>
+<tr><td><code>C02</code></td><td>Microsoft Open Source Code of Conduct</td><td><code>CODE_OF_CONDUCT.md</code></td><td>Invite direct technical criticism while prohibiting personal attacks. The self-deprecating intent is expressed as uncertainty about the code, not the author's worth.</td><td>Text includes the local conduct link and contains no personal insult.</td><td>T01</td></tr>
+<tr><td><code>C03</code></td><td>Feature ownership boundary</td><td>Git base <code>34ce8e6f5</code> and current HEAD</td><td>Inspect added lines and changed files only. Pre-existing console calls are forbidden cleanup targets. A removal must be traceable to a feature commit.</td><td>Two independent searches return no remaining feature-owned console write.</td><td>T02</td></tr>
+<tr><td><code>C04</code></td><td>Review evidence boundary</td><td>Complete <code>34ce8e6f5..HEAD</code> diff, tests, public API, package assets, and approved fidelity limits</td><td>Select by severity then confidence. A finding needs a tight file/line location, reachable scenario, impact, reproduction or proof, and explicit false-positive checks. No fix is authorized.</td><td>Fresh adversarial pass and final evidence recheck.</td><td>T03</td></tr>
+</tbody></table>
+</section>
+
+<section id="persistence-boundary"><h2>File artifact ownership</h2>
+<p>The only durable state is two version-controlled Markdown documents.</p>
+<table><thead><tr><th>Field / document</th><th>Meaning / source of truth</th><th>Generated by</th><th>Supplied by application?</th><th>Returned to application?</th><th>Mutation owner</th><th>Nullability / validation</th><th>Contracts / tasks</th></tr></thead><tbody>
+<tr><td><code>docs/github-pr-isolated-worker-testing.md</code></td><td>Paste-ready PR title and body derived from current branch evidence and local GitHub conventions.</td><td>T01</td><td>No</td><td>No</td><td>Vladyslav Panasenko through approved implementation</td><td>Must contain one title, one complete description, no placeholders, no unsupported claims.</td><td>C01, C02 / T01</td></tr>
+<tr><td><code>docs/reviews/2026-07-24-isolated-worker-test-factory-review.md</code></td><td>One verified review result derived from the complete feature diff.</td><td>T03</td><td>No</td><td>No</td><td>Approved implementation reviewer</td><td>Must contain one actionable finding or an explicit no-finding conclusion; claims require cited code and verification.</td><td>C04 / T03</td></tr>
+</tbody></table>
+</section>
+
+<section id="task-graph"><h2>Task dependency graph</h2><table><thead><tr><th>Task</th><th>Depends on</th><th>Blocks</th><th>Parallel</th><th>Status</th></tr></thead><tbody>
+<tr data-task-id="T01"><td><code>T01</code> Draft GitHub submission</td><td>None</td><td>Final handoff</td><td>Yes, with T02</td><td><!-- MUTABLE-START: task-graph-T01 --><span class="status not-started">Not Started</span><!-- MUTABLE-END: task-graph-T01 --></td></tr>
+<tr data-task-id="T02"><td><code>T02</code> Audit and remove feature-owned console writes</td><td>None</td><td>T03 evidence snapshot</td><td>Yes, with T01</td><td><!-- MUTABLE-START: task-graph-T02 --><span class="status done">Done</span><!-- MUTABLE-END: task-graph-T02 --></td></tr>
+<tr data-task-id="T03"><td><code>T03</code> Analyze one fresh review result</td><td>T02</td><td>Final handoff</td><td>No</td><td><!-- MUTABLE-START: task-graph-T03 --><span class="status done">Done</span><!-- MUTABLE-END: task-graph-T03 --></td></tr>
+</tbody></table></section>
+
+<section id="implementation-tasks"><h2>Implementation tasks</h2>
+<nav><a href="#task-T01">T01</a> · <a href="#task-T02">T02</a> · <a href="#task-T03">T03</a></nav>
+
+<article class="task" id="task-T01" data-task-id="T01"><div class="task-head"><div><strong>T01 — Draft GitHub submission</strong></div><!-- MUTABLE-START: task-card-T01 --><span class="status not-started">Not Started</span><!-- MUTABLE-END: task-card-T01 --></div>
+<p><strong>Outcome:</strong> A paste-ready title and PR body that is candid, technically accurate, and review-oriented.</p>
+<p><strong>Observed current state:</strong> The completed implementation and handoff documents contain the evidence; no consolidated PR draft exists.</p>
+<p><strong>Inputs, preconditions, and outputs:</strong> Read the status report, testing guide, upstream handoff, release notes, PR template, conduct file, and issue #281 snapshot. Output the single Markdown file named in the design.</p>
+<div class="task-layout"><div><h3>Steps</h3><ol><li>Write the exact title from the copy contract.</li><li>Use the local PR-template headings and accurately mark documentation, release notes, backport, and test status.</li><li>Explain the critical testing gap and why AI-driven development increases the need for deterministic tests.</li><li>Summarize packages, capabilities, verification, and host-owned exclusions without claiming publication or support.</li><li>Add the accepted AI/slop disclosure and constructive review invitation.</li><li>Suggest only evidence-backed reviewers and link the conduct policy.</li></ol>
+<h3>Contract and state behavior</h3><p>The artifact is inert. It may say what a future PR should do, but must not imply that a PR, package publication, Microsoft support commitment, reviewer request, or issue update already happened.</p>
+<h3>Allowed implementation discretion</h3><p>Sentence rhythm and heading names may change. The title, evidence, accepted disclosure, issue linkage, reviewer rationale, fidelity boundaries, and conduct framing may not.</p></div>
+<aside><h3>Files</h3><p>Add <code>docs/github-pr-isolated-worker-testing.md</code>.</p><h3>Done when</h3><ul><li>No placeholders or false status claims remain.</li><li>The body follows the local PR template.</li><li>The tone is human and candid without self-insult.</li></ul><h3>Verification</h3><p><code>rg -n "AI-implemented slop-fest|Vladyslav Panasenko|#281|fabiocav|brettsam|Code of Conduct" docs/github-pr-isolated-worker-testing.md</code> → all required concepts appear once in coherent prose.</p><h3>Dependency contracts</h3><p>C01 and C02.</p><h3>Rollback / safe failure</h3><p>Delete the new inert draft; no external state needs reversal.</p></aside></div></article>
+
+<article class="task" id="task-T02" data-task-id="T02"><div class="task-head"><div><strong>T02 — Audit and remove feature-owned console writes</strong></div><!-- MUTABLE-START: task-card-T02 --><span class="status done">Done</span><!-- MUTABLE-END: task-card-T02 --></div>
+<p><strong>Outcome:</strong> No feature-owned direct console writes remain, with no churn to pre-existing output.</p>
+<p><strong>Observed current state:</strong> Reconnaissance found zero matching writes in changed files or added lines, so the expected implementation is verification-only.</p>
+<p><strong>Inputs, preconditions, and outputs:</strong> Compare base <code>34ce8e6f5</code> to implementation HEAD. Output either a narrowly justified removal plus focused tests, or a progress note recording no change required.</p>
+<div class="task-layout"><div><h3>Steps</h3><ol><li>Enumerate base-to-HEAD changed files.</li><li>Search changed-file contents and added diff lines for <code>Console.Write</code>, <code>Console.WriteLine</code>, <code>Console.Error</code>, <code>Console.Out</code>, and fully qualified equivalents.</li><li>Trace any match to its introducing commit.</li><li>For a confirmed feature-owned diagnostic, remove it when redundant or replace it only with an already-established logger owned by that component.</li><li>Run the smallest affected test project and repeat both searches.</li></ol>
+<h3>Contract and state behavior</h3><p>A zero-match result completes the task without source edits. A pre-existing match is reported but untouched. A feature-owned match is removed only if behavior and test observability do not depend on it.</p>
+<h3>Allowed implementation discretion</h3><p>Search command formatting may vary. The base commit, ownership rule, match families, and no-churn outcome are fixed.</p></div>
+<aside><h3>Files</h3><p>Modify only a file proven by C03; expected action is none.</p><h3>Done when</h3><ul><li>Both searches return zero feature-owned writes.</li><li>No pre-existing call is changed.</li><li>Affected tests pass if a source edit occurs.</li></ul><h3>Verification</h3><p><code>git diff --unified=0 34ce8e6f5..HEAD | rg "^\+.*(?:System\.)?Console\.(?:Write|WriteLine|Error|Out)"</code> → no match.</p><h3>Dependency contracts</h3><p>C03.</p><h3>Rollback / safe failure</h3><p>Revert only the narrow cleanup edit if output is required; leave the audit evidence intact.</p></aside></div></article>
+
+<article class="task" id="task-T03" data-task-id="T03"><div class="task-head"><div><strong>T03 — Analyze one fresh review result</strong></div><!-- MUTABLE-START: task-card-T03 --><span class="status done">Done</span><!-- MUTABLE-END: task-card-T03 --></div>
+<p><strong>Outcome:</strong> One deeply verified, high-value review analysis suitable for deciding a later fix.</p>
+<p><strong>Observed current state:</strong> The feature spans 110 files and roughly 8,800 added lines; no dedicated fresh-review artifact exists.</p>
+<p><strong>Inputs, preconditions, and outputs:</strong> Review the post-T02 base-to-HEAD diff, public surfaces, lifecycle/concurrency code, protocol mapping, ASP.NET dispatch, packaging, CI, and fidelity claims. Output the single review Markdown file.</p>
+<div class="task-layout"><div><h3>Steps</h3><ol><li>Inventory public and internal contractual seams and rank review areas by failure impact.</li><li>Inspect correctness, concurrency, disposal, cancellation, compatibility, package identity, CI behavior, and test-oracle independence.</li><li>Generate candidate findings, then disprove them against callers, tests, and documented boundaries.</li><li>Select the highest-severity surviving finding; prefer correctness over style and confidence over novelty.</li><li>Write title, severity, exact location, reachable scenario, impact, evidence, false-positive checks, reproduction command or proof, and recommended remediation shape.</li><li>If nothing survives, record “no actionable finding” and enumerate reviewed risk areas and evidence.</li></ol>
+<h3>Contract and state behavior</h3><p>The review does not mutate source. Known limitations are not defects unless implementation contradicts them. A recommendation does not authorize a fix.</p>
+<h3>Allowed implementation discretion</h3><p>The selected subsystem depends on evidence. Severity definitions, proof requirements, one-result limit, and no-fix boundary are fixed.</p></div>
+<aside><h3>Files</h3><p>Add <code>docs/reviews/2026-07-24-isolated-worker-test-factory-review.md</code>.</p><h3>Done when</h3><ul><li>Exactly one conclusion is presented.</li><li>Every claim has a tight code/evidence pointer.</li><li>False-positive checks are explicit.</li><li>No source fix is included.</li></ul><h3>Verification</h3><p><code>git diff --check &amp;&amp; rg -n "^## (Finding|No actionable finding)|Severity|Evidence|False-positive|Recommendation" docs/reviews/2026-07-24-isolated-worker-test-factory-review.md</code> → structurally complete analysis and clean diff.</p><h3>Dependency contracts</h3><p>C04.</p><h3>Rollback / safe failure</h3><p>Delete or revise the analysis if its proof fails; never preserve a disproven accusation for narrative value.</p></aside></div></article>
+</section>
+
+<section id="handoff-review"><h2>Implementation handoff review</h2>
+<table><thead><tr><th>Task</th><th>Start</th><th>Changes</th><th>Contracts verified</th><th>Failure paths</th><th>Choice remaining</th><th>Class</th></tr></thead><tbody>
+<tr><td><code>T01</code></td><td>Status, guide, handoff, template, issue #281</td><td>One PR Markdown file</td><td>Issue owners, inert output, conduct, fidelity</td><td>Unsupported claim, abrasive tone, false publication state</td><td>Low-risk prose polish only</td><td>Low-risk implementation detail</td></tr>
+<tr><td><code>T02</code></td><td>Base-to-HEAD diff</td><td>Expected none; bounded source edit if proven</td><td>Feature ownership and pre-existing-output exclusion</td><td>False positive, required output removal, excess churn</td><td>Logger choice only if an unexpected owned match exists; use the component's already-injected logger or remove the diagnostic</td><td>Repository fact to confirm</td></tr>
+<tr><td><code>T03</code></td><td>Complete post-cleanup diff</td><td>One review Markdown file</td><td>Severity, reachability, evidence, no-fix boundary</td><td>Speculation, duplicate known limit, weak reproduction</td><td>Finding location is evidence-selected within the fixed review rubric</td><td>Low-risk implementation detail</td></tr>
+</tbody></table><div class="callout">Fresh adversarial pass found no missing scope or ownership decision. T02’s unexpected-match branch is fully bounded by C03.</div>
+</section>
+
+<section id="testing-strategy"><h2>Testing strategy</h2>
+<table><thead><tr><th>Layer</th><th>Behavior</th><th>Command</th><th>Expected</th></tr></thead><tbody>
+<tr><td>Static</td><td>PR content, placeholders, conduct, and reviewer evidence</td><td><code>rg</code> checks plus manual claim-to-source reconciliation</td><td>All required sections; no unsupported status or insult</td></tr>
+<tr><td>Diff ownership</td><td>Direct console output introduced by the feature</td><td>Changed-file scan and added-line diff scan against <code>34ce8e6f5</code></td><td>Zero feature-owned matches</td></tr>
+<tr><td>Review proof</td><td>Selected finding is reachable and reproducible</td><td>Finding-specific focused command selected from existing test/build projects</td><td>Proof supports the stated conclusion; otherwise discard candidate</td></tr>
+<tr><td>Hygiene</td><td>Whitespace and unintended edits</td><td><code>git diff --check</code> and <code>git status --short</code></td><td>Clean diff; only planned artifacts and proven cleanup appear</td></tr>
+</tbody></table>
+</section>
+
+<section id="rollout-operations"><h2>Rollout and operations</h2>
+<table><tbody><tr><th>Concern</th><th>Plan</th><th>Owner</th></tr>
+<tr><td>External mutation</td><td>None. Files are prepared locally; the user decides whether and when to open the PR.</td><td>Vladyslav Panasenko</td></tr>
+<tr><td>Observability</td><td>Git diff and Markdown artifacts are the audit trail.</td><td>Implementer</td></tr>
+<tr><td>Rollback</td><td>Remove the new documents and revert any narrow console cleanup.</td><td>Implementer</td></tr></tbody></table>
+</section>
+
+<section id="security-privacy"><h2>Security, privacy, and conduct</h2>
+<ul><li>No credentials, tokens, private URLs, or unpublished identities enter the PR draft.</li><li>Only public GitHub handles with evidence-backed relevance are suggested.</li><li>The AI disclosure applies scrutiny to the work, not contempt to a person.</li><li>The draft links the Microsoft Open Source Code of Conduct and asks for direct, specific, respectful review.</li></ul>
+</section>
+
+<section id="risks-mitigations"><h2>Risks and mitigations</h2>
+<table><thead><tr><th>Risk</th><th>Impact</th><th>Likelihood</th><th>Mitigation</th><th>Owner</th><th>Tasks</th></tr></thead><tbody>
+<tr><td>“Slop-fest” reads as unserious or excuses defects.</td><td>High</td><td>Medium</td><td>Pair it immediately with evidence, personal accountability, and a request for distrustful review.</td><td>Vladyslav Panasenko</td><td>T01</td></tr>
+<tr><td>Suggested tags become spam.</td><td>Medium</td><td>Low</td><td>Suggest two issue owners first and one optional recent contributor; do not tag externally during implementation.</td><td>Vladyslav Panasenko</td><td>T01</td></tr>
+<tr><td>Cleanup alters pre-existing diagnostic behavior.</td><td>Medium</td><td>Low</td><td>Require base-diff ownership and accept no-op completion.</td><td>Implementer</td><td>T02</td></tr>
+<tr><td>Review produces a dramatic false positive.</td><td>High</td><td>Medium</td><td>Require reachability, proof, caller/test checks, and documented-limit reconciliation before selection.</td><td>Reviewer</td><td>T03</td></tr>
+<tr><td>Analysis scope turns into an unapproved fix.</td><td>Medium</td><td>Medium</td><td>Make the review artifact the terminal output; fixing requires a later explicit instruction.</td><td>Reviewer</td><td>T03</td></tr>
+</tbody></table>
+</section>
+
+<section id="decision-log"><h2>Decision log</h2>
+<table><thead><tr><th>ID</th><th>Decision</th><th>Context</th><th>Options</th><th>Rationale</th><th>Consequences</th></tr></thead><tbody>
+<tr><td><code>D01</code></td><td>Use candid “AI-implemented slop-fest” language without literal self-insult.</td><td>User wants complete AI transparency and a human voice.</td><td>Omit AI; neutral disclosure; candid disclosure; self-insult.</td><td>Candid disclosure best invites scrutiny; self-insult distracts and weakens the gap argument.</td><td>The PR is unconventional but accountable and conduct-compatible.</td></tr>
+<tr><td><code>D02</code></td><td>Review one verified result without fixing it.</td><td>The result is unknown until a fresh full-diff review.</td><td>Preselect a subsystem; report many shallow items; analyze one; analyze and fix.</td><td>One deep result avoids speculative scope and lets the user decide remediation separately.</td><td>A later task may be required to fix a real finding.</td></tr>
+</tbody></table>
+</section>
+
+<section id="open-questions"><h2>Open questions</h2>
+<table><thead><tr><th>ID</th><th>Question</th><th>Owner</th><th>Deadline</th><th>Safe default</th><th>Tasks</th><th>Class</th></tr></thead><tbody>
+<tr><td>N/A</td><td>No unresolved question changes the approved scope.</td><td>Vladyslav Panasenko</td><td>Before approval</td><td>Implement exactly the specified three-task sequence.</td><td>T01, T02, T03</td><td>Non-blocking</td></tr>
+</tbody></table>
+</section>
+
+<section id="final-verification"><h2>Final verification checklist</h2><ul>
+<li>PR draft contains title, complete local-template body, evidence, accepted AI disclosure, reviewers, and conduct link.</li>
+<li>No feature-owned console write remains and no pre-existing console output changed.</li>
+<li>Review artifact contains exactly one evidence-backed conclusion and no source fix.</li>
+<li>All claims reconcile with current branch files and issue #281.</li>
+<li><code>git diff --check</code> passes and the working tree contains only planned changes.</li>
+</ul></section>
+
+<!-- MUTABLE-START: status-ledger -->
+<section id="status-ledger" class="mutable-zone"><h2>Status-tracking ledger</h2><table><thead><tr><th>Timestamp</th><th>Actor</th><th>Target</th><th>Previous</th><th>New</th><th>Note</th></tr></thead><tbody>
+<tr><td>2026-07-24</td><td>Codex planning</td><td>Plan</td><td>Not created</td><td>Draft</td><td>Repository-scouted, implementation-ready three-task baseline awaiting explicit approval.</td></tr>
+            <tr><td>2026-07-25T07:08:23Z</td><td>Vladyslav Panasenko</td><td>Baseline</td><td>Draft</td><td>Approved</td><td>Approved; proceed with the console-write cleanup task.</td></tr>
+<tr><td>2026-07-25T07:08:23Z</td><td>Codex implementation</td><td>Execution</td><td>Not Started</td><td>In Progress</td><td>Started the approved console-write cleanup audit.</td></tr>
+<tr><td>2026-07-25T07:08:23Z</td><td>Codex implementation</td><td>T02</td><td>Not Started</td><td>Done</td><td>Audited all 110 base-to-HEAD changed files, added diff lines, and introducing commits. No feature-owned Console.Write, Console.WriteLine, Console.Error, Console.Out, or fully qualified equivalent exists, so cleanup completed without source changes.</td></tr>
+<tr><td>2026-07-25</td><td>Codex review</td><td>T03</td><td>Not Started</td><td>In Progress</td><td>Started the approved full feature-diff review with correctness, concurrency, disposal, compatibility, package, CI, and test-independence emphasis.</td></tr>
+<tr><td>2026-07-25T07:15:47Z</td><td>Codex review</td><td>T03</td><td>In Progress</td><td>Done</td><td>Completed the full feature-diff review and recorded one verified P1 finding: the runtime lane runs independent smoke tests and then reports zero differential without exchanging or comparing normalized outputs. No source fix was made.</td></tr>
+<!-- STATUS-LEDGER-APPEND -->
+</tbody></table></section>
+<!-- MUTABLE-END: status-ledger -->
+
+<!-- MUTABLE-START: progress-notes -->
+<section id="progress-notes" class="mutable-zone"><h2>Implementation progress notes</h2><table><thead><tr><th>Timestamp</th><th>Actor</th><th>Task</th><th>Note</th></tr></thead><tbody>
+<tr><td>2026-07-24</td><td>Codex planning</td><td><code>T01</code>, <code>T02</code>, <code>T03</code></td><td>Planning complete; implementation has not started.</td></tr>
+<tr><td>2026-07-25T07:08:23Z</td><td>Codex implementation</td><td><code>T02</code></td><td>Done as a verified no-op. The fixed-base audit found zero console matches in 110 changed files and zero matching added diff lines. Existing repository console output was not touched.</td></tr>
+<tr><td>2026-07-25</td><td>Codex review</td><td><code>T03</code></td><td>In progress. Reviewing the complete <code>34ce8e6f5..HEAD</code> diff and validating candidate findings against callers, tests, and documented fidelity boundaries.</td></tr>
+<tr><td>2026-07-25T07:15:47Z</td><td>Codex review</td><td><code>T03</code></td><td>Done. Added <code>docs/reviews/2026-07-24-isolated-worker-test-factory-review.md</code> with the P1 runtime-differential evidence gap, false-positive checks, coverage summary, verification results, and remediation options.</td></tr>
+</tbody></table></section>
+<!-- MUTABLE-END: progress-notes -->
+</div></div></main>
+</body>
+</html>
