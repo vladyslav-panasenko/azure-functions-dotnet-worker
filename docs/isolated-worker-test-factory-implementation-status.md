@@ -1,5 +1,8 @@
 # Isolated worker test factory implementation status
 
+Open question:
+- could i use it without commits in base project? 
+
 Last reconciled: 2026-07-23T16:35:30Z
 
 ## Status summary
