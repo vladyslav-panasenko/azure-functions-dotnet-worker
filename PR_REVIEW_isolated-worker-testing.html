@@ -1,0 +1,838 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PR review guide — isolated worker testing</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --paper: #fffdf8;
+      --ink: #24231f;
+      --muted: #6d6960;
+      --line: #d9d3c7;
+      --accent: #175e54;
+      --accent-soft: #dcece7;
+      --risk: #9a4d22;
+      --risk-soft: #f5e4d6;
+      --code: #202522;
+      --code-ink: #e8eee9;
+      --added: #b8e2c5;
+      --removed: #f0bbb4;
+      --shadow: 0 12px 34px rgba(46, 40, 29, .08);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font: 15px/1.55 "Segoe UI", system-ui, sans-serif;
+    }
+    button, input { font: inherit; }
+    a { color: var(--accent); }
+    .layout {
+      display: grid;
+      grid-template-columns: 282px minmax(0, 1fr);
+      max-width: 1500px;
+      margin: 0 auto;
+    }
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 28px 22px;
+      border-right: 1px solid var(--line);
+      overflow: auto;
+      background: rgba(244, 241, 234, .95);
+    }
+    main { min-width: 0; padding: 46px clamp(24px, 5vw, 76px) 100px; }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    h1 {
+      max-width: 900px;
+      margin: 0;
+      font: 650 clamp(34px, 5vw, 62px)/1.03 Georgia, serif;
+      letter-spacing: -.035em;
+    }
+    h2 { margin: 0 0 14px; font: 650 30px/1.15 Georgia, serif; }
+    h3 { margin: 28px 0 8px; font-size: 17px; }
+    p { max-width: 850px; }
+    .lede { max-width: 900px; color: #4f4c45; font-size: 18px; }
+    .meta, .score {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(120px, 1fr));
+      gap: 12px;
+      margin: 28px 0;
+    }
+    .metric {
+      padding: 15px 16px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--paper);
+    }
+    .metric strong { display: block; font-size: 20px; }
+    .metric span { color: var(--muted); font-size: 12px; }
+    .notice {
+      max-width: 940px;
+      margin: 24px 0;
+      padding: 17px 19px;
+      border-left: 4px solid var(--risk);
+      background: var(--risk-soft);
+    }
+    .notice.good { border-color: var(--accent); background: var(--accent-soft); }
+    nav a {
+      display: flex;
+      gap: 9px;
+      align-items: baseline;
+      padding: 7px 8px;
+      border-radius: 5px;
+      color: var(--ink);
+      text-decoration: none;
+    }
+    nav a:hover, nav a.active { background: var(--accent-soft); color: var(--accent); }
+    nav small { color: var(--muted); }
+    .progress-wrap { margin: 22px 0; }
+    .progress-track { height: 6px; overflow: hidden; border-radius: 9px; background: var(--line); }
+    .progress-bar { width: 0; height: 100%; background: var(--accent); transition: width .2s; }
+    .progress-label { margin-top: 7px; color: var(--muted); font-size: 12px; }
+    .controls { display: grid; gap: 8px; margin: 18px 0; }
+    .controls button, .copy {
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      color: var(--ink);
+      background: var(--paper);
+      cursor: pointer;
+    }
+    .controls button:hover, .copy:hover { border-color: var(--accent); }
+    section.review {
+      max-width: 1050px;
+      margin: 60px 0 0;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+      scroll-margin-top: 18px;
+    }
+    .section-head {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+    }
+    .section-number {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      color: white;
+      background: var(--accent);
+      font-weight: 700;
+    }
+    .risk {
+      padding: 3px 8px;
+      border-radius: 3px;
+      color: var(--risk);
+      background: var(--risk-soft);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .risk.medium { color: #6d5a11; background: #eee7bf; }
+    .risk.low { color: var(--accent); background: var(--accent-soft); }
+    .explain {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin: 18px 0;
+    }
+    .explain > div {
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--paper);
+    }
+    .explain strong { display: block; margin-bottom: 5px; color: var(--accent); }
+    details {
+      margin: 12px 0;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--paper);
+    }
+    summary { padding: 13px 15px; cursor: pointer; font-weight: 650; }
+    details > div { padding: 0 15px 15px; }
+    pre {
+      position: relative;
+      margin: 12px 0;
+      padding: 16px;
+      overflow: auto;
+      border-radius: 6px;
+      color: var(--code-ink);
+      background: var(--code);
+      font: 12px/1.55 Consolas, monospace;
+      tab-size: 4;
+    }
+    pre .add { color: var(--added); }
+    pre .del { color: var(--removed); }
+    code { font-family: Consolas, monospace; font-size: .9em; }
+    .files {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 14px;
+      margin: 12px 0;
+      padding: 0;
+      list-style: none;
+    }
+    .files li {
+      min-width: 0;
+      padding: 7px 9px;
+      border-left: 3px solid var(--line);
+      background: #f8f5ef;
+      overflow-wrap: anywhere;
+      font: 11.5px/1.35 Consolas, monospace;
+    }
+    .files li[data-status="A"] { border-left-color: #4e9468; }
+    .files li[data-status="M"] { border-left-color: #bc8439; }
+    .files b { margin-right: 7px; color: var(--muted); }
+    .questions { padding-left: 21px; }
+    .questions li { margin: 7px 0; }
+    .check {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      margin: 20px 0 0;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: var(--paper);
+    }
+    .check input { width: 19px; height: 19px; margin-top: 2px; accent-color: var(--accent); }
+    .command { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start; }
+    .command pre { margin: 0; }
+    .legend { color: var(--muted); font-size: 12px; }
+    .legend span { margin-right: 12px; }
+    .dot { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 50%; }
+    footer { max-width: 900px; margin-top: 70px; color: var(--muted); }
+    @media (max-width: 900px) {
+      .layout { display: block; }
+      aside { position: relative; width: auto; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      nav { display: grid; grid-template-columns: repeat(2, 1fr); }
+      main { padding-top: 32px; }
+      .meta, .score, .explain { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 580px) {
+      .meta, .score, .explain, .files { grid-template-columns: 1fr; }
+      .section-head { grid-template-columns: 36px 1fr; }
+      .risk { grid-column: 2; justify-self: start; }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside>
+    <p class="eyebrow">Local review companion</p>
+    <strong>Isolated worker testing</strong>
+    <div class="progress-wrap">
+      <div class="progress-track"><div class="progress-bar" id="progress"></div></div>
+      <div class="progress-label" id="progressLabel">0 of 10 sections reviewed</div>
+    </div>
+    <nav id="nav"></nav>
+    <div class="controls">
+      <button id="expandAll">Expand all evidence</button>
+      <button id="collapseAll">Collapse all evidence</button>
+      <button id="resetProgress">Reset review progress</button>
+    </div>
+    <p class="legend">
+      <span><i class="dot" style="background:#4e9468"></i>A added</span>
+      <span><i class="dot" style="background:#bc8439"></i>M modified</span>
+    </p>
+  </aside>
+
+  <main>
+    <header>
+      <p class="eyebrow">Current HEAD 9e6adeba5 · rebased onto upstream/main e6eccaf10 · local review aid</p>
+      <h1>A guided review of the isolated worker integration-testing change</h1>
+      <p class="lede">
+        This page turns the testing feature into ten review decisions. It explains the missing
+        capability, traces how a test reaches real worker code, identifies fidelity limits, and
+        gives you exact commands for inspecting the authoritative Git diff.
+      </p>
+      <div class="meta">
+        <div class="metric"><strong>4</strong><span>preview testing packages</span></div>
+        <div class="metric"><strong>3</strong><span>runnable sample projects</span></div>
+        <div class="metric"><strong>52/52</strong><span>current core tests</span></div>
+        <div class="metric"><strong>.NET 8–10</strong><span>companion build targets</span></div>
+      </div>
+      <div class="notice">
+        <strong>How to use this page:</strong> review architecture first, then public API,
+        invocation behavior, HTTP behavior, packaging, and evidence. Each section accounts for
+        every file in its scope. The excerpts are navigation aids—not replacements for the full
+        Git diff.
+      </div>
+      <details open>
+        <summary>Focused-diff self-review: cleanup before submission</summary>
+        <div>
+          <ul>
+            <li>Removed the broad <code>ConfigureAwait(false)</code> sweep and its synchronization-context regression test; neither is required by this testing feature.</li>
+            <li>Removed unrelated redirect-policy changes, synchronous-validation wrappers, extra exception constructors, and public-model immutability restrictions.</li>
+            <li>Restored exact package ranges throughout the preview packages and their verification scripts.</li>
+            <li>Removed newline-only project diffs and kept the solution changes to the testing projects themselves.</li>
+            <li>Kept only feature-specific correctness fixes, including disposal of parsed binding documents and valid Windows-path test literals.</li>
+          </ul>
+        </div>
+      </details>
+      <div class="command">
+        <pre><code>git diff upstream/main...HEAD -- &lt;path&gt;
+git show --stat --oneline HEAD
+git diff --check upstream/main...HEAD</code></pre>
+        <button class="copy" data-copy="git diff upstream/main...HEAD -- ">Copy diff command</button>
+      </div>
+    </header>
+
+    <section class="review" id="scope" data-title="Scope & boundaries" data-count="2">
+      <div class="section-head">
+        <span class="section-number">1</span>
+        <div><h2>Scope and fidelity boundaries</h2><p>Decide whether this is the right product capability before reviewing its implementation.</p></div>
+        <span class="risk medium">Medium risk</span>
+      </div>
+      <div class="explain">
+        <div><strong>The gap</strong>There is no official WebApplicationFactory-like facility for exercising an isolated worker application through its real entry point and worker pipeline.</div>
+        <div><strong>The change</strong>Add a core in-process worker factory plus ASP.NET Core, Service Bus, and Blob testing companions.</div>
+        <div><strong>The boundary</strong>This does not emulate the Functions host. It cannot prove listener, authorization, settlement, retry-scheduling, scale, or production-infrastructure behavior.</div>
+      </div>
+      <details open>
+        <summary>Behavioral contract</summary>
+        <div>
+          <table>
+            <thead><tr><th align="left">Layer</th><th align="left">It can verify</th><th align="left">It cannot establish</th></tr></thead>
+            <tbody>
+              <tr><td>Core factory</td><td>Startup, DI, middleware, converters, generated metadata, synthetic invocation</td><td>Host routing, listeners, service settlement</td></tr>
+              <tr><td>ASP.NET companion</td><td>Worker-owned ASP.NET routing and middleware via TestServer</td><td>Functions-host auth and host-owned HTTP behavior</td></tr>
+              <tr><td>Service trigger companions</td><td>SDK-shaped Service Bus and Blob values through production worker conversion and middleware</td><td>Listeners, settlement, receipts, poison handling, host retries, or scale</td></tr>
+              <tr><td>Runtime smoke</td><td>Selected scenarios work with Core Tools/Azurite</td><td>Cross-runtime parity without shared normalized fixtures</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+      <details>
+        <summary>Files in this section (2)</summary>
+        <div><ul class="files">
+          <li data-status="A"><b>A</b>docs/testing.md</li>
+          <li data-status="A"><b>A</b>docs/testing-upstream-handoff.md</li>
+        </ul></div>
+      </details>
+      <h3>Questions to answer</h3>
+      <ul class="questions">
+        <li>Are the host-owned exclusions explicit enough that users will not mistake synthetic triggers for end-to-end coverage?</li>
+        <li>Should preview package publication remain a separate maintainer-authorized step?</li>
+      </ul>
+      <label class="check"><input type="checkbox"><span><strong>Review decision:</strong> the capability and its fidelity boundary are acceptable.</span></label>
+    </section>
+
+    <section class="review" id="identity" data-title="Application identity" data-count="15">
+      <div class="section-head">
+        <span class="section-number">2</span>
+        <div><h2>Application identity without global mutation</h2><p>Make the worker load the test application’s assembly and directory while preserving parallel-test isolation.</p></div>
+        <span class="risk">High risk</span>
+      </div>
+      <div class="explain">
+        <div><strong>Why</strong>The normal worker discovers its application from the process entry assembly and environment. A test host runs inside a different test process.</div>
+        <div><strong>How</strong>Execution-context-local assembly and directory contexts override discovery only inside the factory’s async flow, with existing behavior as fallback.</div>
+        <div><strong>Main danger</strong>A process-global environment or AppContext override would leak between factories and make parallel tests nondeterministic.</div>
+      </div>
+      <details open>
+        <summary>Focused diff: the identity seam</summary>
+        <div><pre><code><span class="add">+ internal static class WorkerApplicationAssemblyContext</span>
+<span class="add">+ {</span>
+<span class="add">+     private static readonly AsyncLocal&lt;Assembly?&gt; _current = new();</span>
+<span class="add">+     internal static Assembly? Current =&gt; _current.Value;</span>
+<span class="add">+     internal static IDisposable Push(Assembly applicationAssembly) { ... }</span>
+<span class="add">+ }</span>
+
+  // Production fallback remains in place when no test scope is active.
+  Assembly applicationAssembly =
+      WorkerApplicationAssemblyContext.Current ?? Assembly.GetEntryAssembly()!;</code></pre></div>
+      </details>
+      <details>
+        <summary>Files in this section (15)</summary>
+        <div><ul class="files">
+          <li data-status="A"><b>A</b>src/DotNetWorker.Core/Hosting/WorkerApplicationAssemblyContext.cs</li>
+          <li data-status="M"><b>M</b>src/DotNetWorker.Core/Hosting/CoreWorkerHostBuilderExtensions.cs</li>
+          <li data-status="M"><b>M</b>src/DotNetWorker.Core/Hosting/ServiceCollectionExtensions.cs</li>
+          <li data-status="M"><b>M</b>src/DotNetWorker.Core/Properties/AssemblyInfo.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Grpc/Definition/WorkerApplicationDirectoryContext.cs</li>
+          <li data-status="M"><b>M</b>src/DotNetWorker.Grpc/Definition/GrpcFunctionDefinition.cs</li>
+          <li data-status="M"><b>M</b>src/DotNetWorker.Grpc/GrpcWorker.cs</li>
+          <li data-status="M"><b>M</b>src/DotNetWorker.Grpc/Properties/AssemblyInfo.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Core/Context/FunctionRetryException.cs</li>
+          <li data-status="M"><b>M</b>src/DotNetWorker.Core/Context/RetryContext.cs</li>
+          <li data-status="M"><b>M</b>src/DotNetWorker.Grpc/GrpcRetryContext.cs</li>
+          <li data-status="A"><b>A</b>test/DotNetWorker.Tests/Hosting/ApplicationAssemblyHostingTests.cs</li>
+          <li data-status="A"><b>A</b>test/DotNetWorker.Tests/Hosting/WorkerApplicationAssemblyContextTests.cs</li>
+          <li data-status="M"><b>M</b>test/DotNetWorker.Tests/Handlers/InvocationHandlerTests.cs</li>
+          <li data-status="M"><b>M</b>test/DotNetWorker.Tests/DotNetWorker.Tests.csproj</li>
+        </ul></div>
+      </details>
+      <h3>Questions to answer</h3>
+      <ul class="questions">
+        <li>Does every override restore its prior value in a finally/disposable path?</li>
+        <li>Does production startup behave identically when no test context exists?</li>
+        <li>Is additive retry exception projection compatible with existing RetryContext consumers?</li>
+      </ul>
+      <label class="check"><input type="checkbox"><span><strong>Review decision:</strong> identity isolation and production fallback are sound.</span></label>
+    </section>
+
+    <section class="review" id="protocol" data-title="In-memory protocol" data-count="7">
+      <div class="section-head">
+        <span class="section-number">3</span>
+        <div><h2>In-memory worker protocol</h2><p>Drive the real worker message processor without opening a network listener or embedding the Functions host.</p></div>
+        <span class="risk">High risk</span>
+      </div>
+      <div class="explain">
+        <div><strong>Why</strong>Calling function methods directly bypasses metadata discovery, middleware, converters, FunctionContext, output binding, and protocol projection.</div>
+        <div><strong>How</strong>A channel-backed IWorkerClientFactory feeds protocol messages into the production IMessageProcessor and captures worker responses.</div>
+        <div><strong>Lifecycle</strong>Start stream → worker init → metadata discovery → exact function load → invocation/cancellation → termination.</div>
+      </div>
+      <details open>
+        <summary>Focused flow</summary>
+        <div><pre><code>Test API
+  → InMemoryFunctionsHost.InvokeAsync
+    → channel request (InvocationRequest)
+      → production IMessageProcessor
+        → InvocationHandler / middleware / converters / user function
+      ← channel response (InvocationResponse)
+  ← mapped FunctionInvocationResult</code></pre></div>
+      </details>
+      <details>
+        <summary>Files in this section (7)</summary>
+        <div><ul class="files">
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Protocol/InMemoryFunctionsHost.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Protocol/InMemoryFunctionsHostState.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Protocol/InMemoryWorkerClientFactory.cs</li>
+          <li data-status="A"><b>A</b>test/DotNetWorker.Testing.Tests/Protocol/InMemoryFunctionsHostProtocolTests.cs</li>
+          <li data-status="A"><b>A</b>test/Testing.Conformance/Transport/LoopbackGrpcServer.cs</li>
+          <li data-status="A"><b>A</b>test/Testing.Conformance/Transport/TransportConformanceTests.cs</li>
+          <li data-status="A"><b>A</b>test/Testing.Conformance/Transport/TransportDifferentialRunner.cs</li>
+        </ul></div>
+      </details>
+      <h3>Questions to answer</h3>
+      <ul class="questions">
+        <li>Are request/response correlation, cancellation, duplicate messages, stream termination, and disposal all bounded?</li>
+        <li>Does the in-memory path reuse production handlers rather than reimplementing worker behavior?</li>
+        <li>Does serialized transport comparison normalize only fields known to be nondeterministic?</li>
+      </ul>
+      <label class="check"><input type="checkbox"><span><strong>Review decision:</strong> protocol fidelity and lifecycle handling are acceptable.</span></label>
+    </section>
+
+    <section class="review" id="factory" data-title="Factory lifecycle" data-count="14">
+      <div class="section-head">
+        <span class="section-number">4</span>
+        <div><h2>Factory startup, cloning, concurrency, and disposal</h2><p>Capture the real IHost built by the application entry point and expose a stable test fixture.</p></div>
+        <span class="risk">High risk</span>
+      </div>
+      <div class="explain">
+        <div><strong>Entry point</strong>The factory executes TEntryPoint and observes DiagnosticListener host-building events instead of reconstructing Program configuration.</div>
+        <div><strong>Mutation model</strong>WithSetting and configuration methods return independent, unstarted clones; startup becomes immutable once triggered.</div>
+        <div><strong>Concurrency fix</strong>Each hosting listener owns synchronized subscriptions so parallel applications cannot overwrite or dispose one another’s capture.</div>
+      </div>
+      <details open>
+        <summary>Focused diff: factory contract</summary>
+        <div><pre><code><span class="add">+ public class FunctionsApplicationFactory&lt;TEntryPoint&gt; : IAsyncDisposable</span>
+<span class="add">+ {</span>
+<span class="add">+     public IServiceProvider Services { get; }</span>
+<span class="add">+     public FunctionsTestCapabilities Capabilities { get; }</span>
+<span class="add">+     public FunctionsApplicationFactory&lt;TEntryPoint&gt; WithSetting(...);</span>
+<span class="add">+     public FunctionsApplicationFactory&lt;TEntryPoint&gt; ConfigureServices(...);</span>
+<span class="add">+     public Task&lt;FunctionInvocationResult&gt; InvokeAsync(...);</span>
+<span class="add">+     public ValueTask DisposeAsync();</span>
+<span class="add">+ }</span></code></pre></div>
+      </details>
+      <details>
+        <summary>Files in this section (14)</summary>
+        <div><ul class="files">
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/FunctionsApplicationFactory.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/FunctionsApplicationFactoryOptions.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/FunctionsTestCapabilities.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/AssemblyCompatibilityValidator.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Hosting/DeferredFunctionsHostBuilder.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Hosting/HostFactoryResolver.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Properties/AssemblyInfo.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/README.md</li>
+          <li data-status="A"><b>A</b>test/DotNetWorker.Testing.Tests/Factory/AssemblyCompatibilityTests.cs</li>
+          <li data-status="A"><b>A</b>test/DotNetWorker.Testing.Tests/Factory/FactoryOperationalTests.cs</li>
+          <li data-status="A"><b>A</b>test/DotNetWorker.Testing.Tests/Factory/FunctionsApplicationFactoryTests.cs</li>
+          <li data-status="A"><b>A</b>test/Resources/Testing/ClassicFunctionApp/Program.cs</li>
+          <li data-status="A"><b>A</b>test/Resources/Testing/ModernFunctionApp/Program.cs</li>
+          <li data-status="A"><b>A</b>test/Resources/Testing/ModernFunctionApp/TestFunction.cs</li>
+        </ul></div>
+      </details>
+      <h3>Questions to answer</h3>
+      <ul class="questions">
+        <li>Can a startup failure, partial host, or dispose-during-start leave callbacks or protocol work alive?</li>
+        <li>Are listener subscriptions strictly instance-owned under concurrent DiagnosticListener callbacks?</li>
+        <li>Does lazy startup make configuration timing obvious enough to callers?</li>
+      </ul>
+      <label class="check"><input type="checkbox"><span><strong>Review decision:</strong> startup capture, cloning, and disposal are robust.</span></label>
+    </section>
+
+    <section class="review" id="invocation" data-title="Invocation mapping" data-count="15">
+      <div class="section-head">
+        <span class="section-number">5</span>
+        <div><h2>Invocation and value mapping</h2><p>Convert ergonomic test inputs into worker protocol values, then project outputs, logs, exceptions, trace, and retry data back to tests.</p></div>
+        <span class="risk">High risk</span>
+      </div>
+      <div class="explain">
+        <div><strong>Input model</strong>FunctionTestValue distinguishes scalar data, JSON, bytes, and binding metadata rather than hiding everything behind object.</div>
+        <div><strong>Output model</strong>FunctionInvocationResult captures return value, output bindings, logs, invocation ID, status, retry context, and failure.</div>
+        <div><strong>Risk</strong>Protocol type conversion is compatibility-sensitive; convenient coercion can conceal mismatches users need to see.</div>
+      </div>
+      <details>
+        <summary>Files in this section (15)</summary>
+        <div><ul class="files">
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Invocation/FunctionInvocationMapper.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Invocation/FunctionInvocationModels.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Invocation/FunctionTestValue.cs</li>
+          <li data-status="A"><b>A</b>test/DotNetWorker.Testing.Tests/Invocation/FunctionInvocationTests.cs</li>
+          <li data-status="A"><b>A</b>test/Resources/Testing/ClassicFunctionApp/TestFunction.cs</li>
+          <li data-status="A"><b>A</b>test/Resources/Testing/ClassicFunctionApp/ClassicFunctionApp.csproj</li>
+          <li data-status="A"><b>A</b>test/extensions/Worker.Extensions.Http.AspNetCore.Testing.Tests/Worker.Extensions.Http.AspNetCore.Testing.Tests.csproj</li>
+          <li data-status="A"><b>A</b>test/Resources/Testing/ModernFunctionApp/ModernFunctionApp.csproj</li>
+          <li data-status="A"><b>A</b>test/Resources/Testing/ModernFunctionApp/host.json</li>
+          <li data-status="A"><b>A</b>test/Resources/Testing/AspNetCoreFunctionApp/TestFunctions.cs</li>
+          <li data-status="A"><b>A</b>test/Resources/Testing/AspNetCoreFunctionApp/MarkerMiddleware.cs</li>
+          <li data-status="A"><b>A</b>test/Resources/Testing/AspNetCoreFunctionApp/Program.cs</li>
+          <li data-status="A"><b>A</b>test/Resources/Testing/AspNetCoreFunctionApp/AspNetCoreFunctionApp.csproj</li>
+          <li data-status="A"><b>A</b>test/Resources/Testing/AspNetCoreFunctionApp/host.json</li>
+          <li data-status="A"><b>A</b>test/Resources/Projects/WorkerCoreNullCompatibility/CompileCompatibility.cs</li>
+        </ul></div>
+      </details>
+      <h3>Questions to answer</h3>
+      <ul class="questions">
+        <li>Are null, binary, JSON, collections, binding data, multiple outputs, and exceptions represented without lossy surprises?</li>
+        <li>Does function selection use generated metadata and reject ambiguity or missing names clearly?</li>
+        <li>Are trace and retry fields additive and faithful to the worker protocol?</li>
+      </ul>
+      <label class="check"><input type="checkbox"><span><strong>Review decision:</strong> invocation mapping is explicit and sufficiently faithful.</span></label>
+    </section>
+
+    <section class="review" id="http" data-title="HTTP paths" data-count="19">
+      <div class="section-head">
+        <span class="section-number">6</span>
+        <div><h2>Built-in HTTP and ASP.NET Core paths</h2><p>Support both isolated-worker HTTP models without pretending they have the same routing semantics.</p></div>
+        <span class="risk">High risk</span>
+      </div>
+      <div class="explain">
+        <div><strong>Built-in HTTP</strong>CreateHttpClient(functionName) targets a generated function explicitly; the URL becomes request payload, not a Functions-host route selector.</div>
+        <div><strong>ASP.NET Core</strong>WithAspNetCore installs a companion bridge and TestServer so worker-owned endpoint routing and ASP.NET middleware run normally.</div>
+        <div><strong>Boundary</strong>No real TCP port, Functions keys, or host-owned routing/authorization are present in either in-process mode.</div>
+      </div>
+      <details open>
+        <summary>Focused diff: two intentionally different clients</summary>
+        <div><pre><code>// Built-in model: choose the function explicitly.
+using HttpClient builtIn = factory.CreateHttpClient("CreateOrder");
+
+// ASP.NET model: TestServer performs worker-owned routing.
+using HttpClient aspnet = factory.WithAspNetCore().CreateClient();</code></pre></div>
+      </details>
+      <details>
+        <summary>Files in this section (19)</summary>
+        <div><ul class="files">
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Http/BuiltInHttpMessageHandler.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Http/FunctionsTestClientOptions.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Http/FunctionsTestInvocationDispatcher.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Http/IFunctionsTestHttpClientProvider.cs</li>
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/Http/IFunctionsTestInvocationDispatcher.cs</li>
+          <li data-status="A"><b>A</b>test/DotNetWorker.Testing.Tests/Invocation/BuiltInHttpTests.cs</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.Http.AspNetCore.Testing/src/AspNetCoreFunctionsApplicationFactoryExtensions.cs</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.Http.AspNetCore.Testing/src/AspNetCoreTestClientHandler.cs</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.Http.AspNetCore.Testing/src/AspNetCoreTestHttpClientProvider.cs</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.Http.AspNetCore.Testing/src/FunctionsTestingDispatchMiddleware.cs</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.Http.AspNetCore.Testing/src/README.md</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.Http.AspNetCore/src/AspNetMiddleware/IFunctionsHttpRequestDispatcher.cs</li>
+          <li data-status="M"><b>M</b>extensions/Worker.Extensions.Http.AspNetCore/src/AspNetMiddleware/FunctionsEndpointDataSource.cs</li>
+          <li data-status="M"><b>M</b>extensions/Worker.Extensions.Http.AspNetCore/src/FunctionsHostBuilderExtensions.cs</li>
+          <li data-status="M"><b>M</b>extensions/Worker.Extensions.Http.AspNetCore/src/Properties/AssemblyInfo.cs</li>
+          <li data-status="A"><b>A</b>test/extensions/Worker.Extensions.Http.AspNetCore.Testing.Tests/AspNetCoreFactoryTests.cs</li>
+          <li data-status="A"><b>A</b>samples/Testing/BuiltInHttp.Tests/BuiltInHttpSampleTests.cs</li>
+          <li data-status="A"><b>A</b>samples/Testing/AspNetCore.Tests/AspNetCoreSampleTests.cs</li>
+          <li data-status="M"><b>M</b>test/E2ETests/E2ETests/HttpEndToEndTests.cs</li>
+        </ul></div>
+      </details>
+      <h3>Questions to answer</h3>
+      <ul class="questions">
+        <li>Is the dispatcher seam narrow enough to avoid coupling production ASP.NET code to a test framework?</li>
+        <li>Do cancellation, response body ownership, headers, cookies, and multi-value query data round-trip correctly?</li>
+        <li>Will users understand why built-in CreateHttpClient requires a function name?</li>
+      </ul>
+      <label class="check"><input type="checkbox"><span><strong>Review decision:</strong> both HTTP paths are correctly separated and documented.</span></label>
+    </section>
+
+    <section class="review" id="service-triggers" data-title="Service triggers" data-count="14">
+      <div class="section-head">
+        <span class="section-number">7</span>
+        <div><h2>Service Bus and Blob trigger testing</h2><p>Verify SDK-shaped trigger payloads through the production worker path without claiming Functions-host behavior.</p></div>
+        <span class="risk">High risk</span>
+      </div>
+      <div class="explain">
+        <div><strong>Service Bus</strong>Reconstructs real <code>ServiceBusReceivedMessage</code> values, batches, bodies, and standard binding metadata from protocol-neutral test values.</div>
+        <div><strong>Blob</strong>Supports content and path-token assertions plus network-free creation of Blob SDK clients through the production Blob converter.</div>
+        <div><strong>Boundary</strong>No listener starts. Completion, dead-lettering, lock renewal, Blob receipts, poison handling, retries, concurrency, and scale remain full-host tests.</div>
+      </div>
+      <details open>
+        <summary>Runnable examples and assertions</summary>
+        <div><pre><code>ServiceBusReceivedMessage message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+    body: BinaryData.FromString("order-created"),
+    messageId: "message-42",
+    deliveryCount: 2,
+    lockTokenGuid: Guid.NewGuid());
+
+FunctionInvocationResult serviceBus = await factory.InvokeServiceBusAsync(
+    "ServiceBusMessage", "message", message);
+serviceBus.EnsureSucceeded();
+
+FunctionInvocationResult blob = await factory.InvokeBlobAsync(
+    "BlobBytes", "blob", BinaryData.FromString("invoice-content"),
+    "invoices/42.txt",
+    new Uri("https://account.blob.core.windows.net/testing/invoices/42.txt"));
+blob.EnsureSucceeded();</code></pre></div>
+      </details>
+      <details>
+        <summary>What the example project proves</summary>
+        <div>
+          <table>
+            <thead><tr><th align="left">Example</th><th align="left">Evidence</th><th align="left">Escalate when asserting</th></tr></thead>
+            <tbody>
+              <tr><td>Rich Service Bus message</td><td>AMQP model conversion, message/application properties, binding metadata, user result</td><td>Queue/topic selection, locks, settlement, sessions</td></tr>
+              <tr><td>Service Bus batch</td><td>Batch model conversion, order, per-message identity</td><td>Batch formation, prefetch, listener concurrency</td></tr>
+              <tr><td>Blob content</td><td>Payload conversion and <code>{name}</code> binding data</td><td>Polling/Event Grid, receipts, poison handling</td></tr>
+              <tr><td>Blob client</td><td>Connection selection and client identity without I/O</td><td>Credentials, networking, permissions, durable reads/writes</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+      <details>
+        <summary>Files in this section (14)</summary>
+        <div><ul class="files">
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.ServiceBus.Testing/src/Worker.Extensions.ServiceBus.Testing.csproj</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.ServiceBus.Testing/src/ServiceBusTriggerTestData.cs</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.ServiceBus.Testing/src/ServiceBusFunctionsApplicationFactoryExtensions.cs</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.ServiceBus.Testing/src/README.md</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.Storage.Blobs.Testing/src/Worker.Extensions.Storage.Blobs.Testing.csproj</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.Storage.Blobs.Testing/src/BlobTriggerTestData.cs</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.Storage.Blobs.Testing/src/BlobFunctionsApplicationFactoryExtensions.cs</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.Storage.Blobs.Testing/src/README.md</li>
+          <li data-status="A"><b>A</b>test/DotNetWorker.Testing.Tests/Invocation/ServiceTriggerInvocationTests.cs</li>
+          <li data-status="M"><b>M</b>test/Resources/Testing/ModernFunctionApp/TestFunction.cs</li>
+          <li data-status="M"><b>M</b>test/Resources/Testing/ModernFunctionApp/ModernFunctionApp.csproj</li>
+          <li data-status="A"><b>A</b>samples/Testing/ServiceTriggers.Tests/ServiceTriggers.Tests.csproj</li>
+          <li data-status="A"><b>A</b>samples/Testing/ServiceTriggers.Tests/ServiceTriggerSampleTests.cs</li>
+          <li data-status="A"><b>A</b>samples/Testing/ServiceTriggers.Tests/README.md</li>
+        </ul></div>
+      </details>
+      <h3>Questions to answer</h3>
+      <ul class="questions">
+        <li>Do the helpers reproduce the exact SDK model-binding payload expected by the matching production extension?</li>
+        <li>Are malformed lock tokens, empty batches, and invalid Blob coordinates rejected before dispatch?</li>
+        <li>Do every README, sample, and capability flag keep listener and settlement claims out of scope?</li>
+      </ul>
+      <label class="check"><input type="checkbox"><span><strong>Review decision:</strong> trigger conversion coverage is useful, accurate, and does not overstate host fidelity.</span></label>
+    </section>
+
+    <section class="review" id="packages" data-title="Packages & compatibility" data-count="18">
+      <div class="section-head">
+        <span class="section-number">8</span>
+        <div><h2>Packages, compatibility, and build wiring</h2><p>Make test packages consumable while rejecting incompatible worker package combinations early.</p></div>
+        <span class="risk medium">Medium risk</span>
+      </div>
+      <div class="explain">
+        <div><strong>Versioning</strong>Independent 1.0.0-preview.n test-package line; no publication is performed by this change.</div>
+        <div><strong>Compatibility</strong>Worker-coupled packages and TestHost dependencies use exact closed ranges. buildTransitive manifest checks and runtime validation prevent silent skew.</div>
+        <div><strong>Integration</strong>Solutions, artifact jobs, validation fixtures, samples, release notes, and NuGet configs are wired together.</div>
+      </div>
+      <details>
+        <summary>Files in this section (16)</summary>
+        <div><ul class="files">
+          <li data-status="A"><b>A</b>src/DotNetWorker.Testing/DotNetWorker.Testing.csproj</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.Http.AspNetCore.Testing/src/Worker.Extensions.Http.AspNetCore.Testing.csproj</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.ServiceBus.Testing/src/Worker.Extensions.ServiceBus.Testing.csproj</li>
+          <li data-status="A"><b>A</b>extensions/Worker.Extensions.Storage.Blobs.Testing/src/Worker.Extensions.Storage.Blobs.Testing.csproj</li>
+          <li data-status="A"><b>A</b>build/WorkerTestingCompatibility.props</li>
+          <li data-status="A"><b>A</b>build/WorkerTestingPack.targets</li>
+          <li data-status="M"><b>M</b>DotNetWorker.sln</li>
+          <li data-status="M"><b>M</b>DotNetWorker.Extensions.sln</li>
+          <li data-status="M"><b>M</b>eng/ci/official-release.yml</li>
+          <li data-status="M"><b>M</b>eng/ci/templates/official/jobs/build-artifacts.yml</li>
+          <li data-status="A"><b>A</b>eng/verify-testing-packages.ps1</li>
+          <li data-status="A"><b>A</b>eng/verify-testing-handoff.ps1</li>
+          <li data-status="A"><b>A</b>test/PackageValidation/TestingPackages/TestingPackages.csproj</li>
+          <li data-status="A"><b>A</b>test/PackageValidation/TestingPackages/PackageCompileSmoke.cs</li>
+          <li data-status="A"><b>A</b>test/PackageValidation/TestingPackages/NuGet.Config</li>
+          <li data-status="A"><b>A</b>test/Resources/Projects/WorkerCoreNullCompatibility/WorkerCoreNullCompatibility.csproj</li>
+          <li data-status="M"><b>M</b>release_notes.md</li>
+          <li data-status="A"><b>A</b>test/DotNetWorker.Testing.Tests/DotNetWorker.Testing.Tests.csproj</li>
+        </ul></div>
+      </details>
+      <h3>Questions to answer</h3>
+      <ul class="questions">
+        <li>Are all exact dependency locks intentional and verified against the packed package assets?</li>
+        <li>Do validation scripts inspect packed nuspec/assets rather than only project declarations?</li>
+        <li>Does official-release wiring build artifacts without accidentally authorizing publication?</li>
+      </ul>
+      <label class="check"><input type="checkbox"><span><strong>Review decision:</strong> package boundaries and compatibility enforcement are acceptable.</span></label>
+    </section>
+
+    <section class="review" id="evidence" data-title="CI & conformance" data-count="14">
+      <div class="section-head">
+        <span class="section-number">9</span>
+        <div><h2>CI, conformance, samples, and benchmarks</h2><p>Check that every claim is backed by the correct kind of evidence.</p></div>
+        <span class="risk medium">Medium risk</span>
+      </div>
+      <div class="explain">
+        <div><strong>Unit/integration</strong>Core factory and ASP.NET companion suites exercise lifecycle, invocation, HTTP, isolation, and compatibility.</div>
+        <div><strong>Conformance</strong>Serialized in-memory vs loopback-gRPC comparison is a real normalized differential on .NET 8 and .NET 10.</div>
+        <div><strong>Runtime smoke</strong>Core Tools/Azurite scenarios are deliberately named smoke tests and do not report fabricated parity or zero differences.</div>
+      </div>
+      <div class="notice good">
+        <strong>Current local evidence:</strong> core factory 52/52 including five service-trigger tests;
+        Service Bus and Blob companions build without warnings on net8.0, net9.0, and net10.0;
+        the runnable service-trigger sample passes 5/5; packed-package fresh-consumer validation
+        and handoff verification passed.
+      </div>
+      <details open>
+        <summary>Review correction already applied</summary>
+        <div><pre><code><span class="del">- lane = 'runtime-differential'</span>
+<span class="del">- unexplainedDifferences = 0</span>
+<span class="add">+ lane = 'runtime-smoke'</span>
+<span class="add">+ note = 'Independent runtime smoke coverage; this report does not claim parity.'</span></code></pre></div>
+      </details>
+      <details>
+        <summary>Files in this section (14)</summary>
+        <div><ul class="files">
+          <li data-status="M"><b>M</b>eng/ci/templates/jobs/run-unit-tests.yml</li>
+          <li data-status="M"><b>M</b>eng/ci/templates/jobs/run-integration-tests-windows.yml</li>
+          <li data-status="A"><b>A</b>test/Testing.Conformance/Testing.Conformance.csproj</li>
+          <li data-status="A"><b>A</b>test/Testing.Conformance/GlobalUsings.cs</li>
+          <li data-status="A"><b>A</b>test/Testing.Conformance/run.ps1</li>
+          <li data-status="A"><b>A</b>test/Testing.Benchmarks/Testing.Benchmarks.csproj</li>
+          <li data-status="A"><b>A</b>test/Testing.Benchmarks/FactoryBenchmarks.cs</li>
+          <li data-status="A"><b>A</b>test/Testing.Benchmarks/Program.cs</li>
+          <li data-status="A"><b>A</b>samples/Testing/BuiltInHttp.Tests/BuiltInHttp.Tests.csproj</li>
+          <li data-status="A"><b>A</b>samples/Testing/AspNetCore.Tests/AspNetCore.Tests.csproj</li>
+          <li data-status="A"><b>A</b>samples/Testing/ServiceTriggers.Tests/ServiceTriggers.Tests.csproj</li>
+          <li data-status="A"><b>A</b>samples/Testing/ServiceTriggers.Tests/ServiceTriggerSampleTests.cs</li>
+          <li data-status="A"><b>A</b>samples/Testing/ServiceTriggers.Tests/README.md</li>
+          <li data-status="M"><b>M</b>test/E2ETests/E2ETests/AspNetCore/CancellationEndToEndTests.cs</li>
+        </ul></div>
+      </details>
+      <h3>Questions to answer</h3>
+      <ul class="questions">
+        <li>Does each CI lane fail when its intended prerequisite is missing in official CI, while remaining usable locally?</li>
+        <li>Are benchmarks informational until maintainers establish statistically reviewed thresholds?</li>
+        <li>Do sample tests consume local packed packages rather than project references?</li>
+      </ul>
+      <label class="check"><input type="checkbox"><span><strong>Review decision:</strong> evidence supports the claims and CI names are honest.</span></label>
+    </section>
+
+    <section class="review" id="inventory" data-title="Residual inventory" data-count="1">
+      <div class="section-head">
+        <span class="section-number">10</span>
+        <div><h2>Residual file inventory and final decision</h2><p>Account for the remaining project fixtures and verify that no internal artifacts entered the commit.</p></div>
+        <span class="risk low">Low risk</span>
+      </div>
+      <details open>
+        <summary>Remaining files (1)</summary>
+        <div><ul class="files">
+          <li data-status="A"><b>A</b>test/Resources/Testing/ClassicFunctionApp/host.json</li>
+        </ul></div>
+      </details>
+      <div class="notice good">
+        Reconcile the section inventories against the final commit immediately before submission.
+        Internal specs, implementation-status notes, the PR draft, and this review guide remain
+        local preparation artifacts unless maintainers explicitly choose to include them.
+      </div>
+      <h3>Final commands</h3>
+      <div class="command">
+        <pre><code>git status --short --branch
+git diff --check upstream/main...HEAD
+git diff --name-status upstream/main...HEAD
+dotnet test test\DotNetWorker.Testing.Tests\DotNetWorker.Testing.Tests.csproj -c Release
+dotnet test samples\Testing\ServiceTriggers.Tests\ServiceTriggers.Tests.csproj -c Release
+dotnet test test\extensions\Worker.Extensions.Http.AspNetCore.Testing.Tests\Worker.Extensions.Http.AspNetCore.Testing.Tests.csproj -c Release -f net8.0 --no-build --no-restore
+dotnet test test\Testing.Conformance\Testing.Conformance.csproj -c Release --no-build --no-restore</code></pre>
+        <button class="copy" data-copy="git status --short --branch&#10;git diff --check upstream/main...HEAD&#10;git diff --name-status upstream/main...HEAD">Copy checks</button>
+      </div>
+      <label class="check"><input type="checkbox"><span><strong>Final decision:</strong> the final diff is accounted for and the branch is ready for PR submission.</span></label>
+    </section>
+
+    <footer>
+      Generated as a local review aid for Vladyslav Panasenko. The Git commit is authoritative.
+      Review-state checkboxes are saved only in this browser’s local storage.
+    </footer>
+  </main>
+</div>
+<script>
+  const sections = [...document.querySelectorAll("section.review")];
+  const storageKey = "isolated-worker-testing-review-v1";
+  const nav = document.getElementById("nav");
+  const saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
+
+  sections.forEach((section, index) => {
+    const link = document.createElement("a");
+    link.href = `#${section.id}`;
+    link.innerHTML = `<span>${index + 1}. ${section.dataset.title}</span><small>${section.dataset.count}</small>`;
+    nav.appendChild(link);
+    const checkbox = section.querySelector(".check input");
+    checkbox.checked = Boolean(saved[section.id]);
+    checkbox.addEventListener("change", saveProgress);
+  });
+
+  function saveProgress() {
+    const state = {};
+    sections.forEach(section => state[section.id] = section.querySelector(".check input").checked);
+    localStorage.setItem(storageKey, JSON.stringify(state));
+    renderProgress();
+  }
+
+  function renderProgress() {
+    const complete = sections.filter(section => section.querySelector(".check input").checked).length;
+    document.getElementById("progress").style.width = `${complete / sections.length * 100}%`;
+    document.getElementById("progressLabel").textContent = `${complete} of ${sections.length} sections reviewed`;
+  }
+
+  document.getElementById("expandAll").addEventListener("click", () => {
+    document.querySelectorAll("details").forEach(detail => detail.open = true);
+  });
+  document.getElementById("collapseAll").addEventListener("click", () => {
+    document.querySelectorAll("details").forEach(detail => detail.open = false);
+  });
+  document.getElementById("resetProgress").addEventListener("click", () => {
+    sections.forEach(section => section.querySelector(".check input").checked = false);
+    saveProgress();
+  });
+  document.querySelectorAll("[data-copy]").forEach(button => {
+    button.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(button.dataset.copy);
+      const original = button.textContent;
+      button.textContent = "Copied";
+      setTimeout(() => button.textContent = original, 1200);
+    });
+  });
+
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      document.querySelectorAll("nav a").forEach(a => a.classList.toggle("active", a.hash === `#${entry.target.id}`));
+    });
+  }, { rootMargin: "-20% 0px -70% 0px" });
+  sections.forEach(section => observer.observe(section));
+  renderProgress();
+</script>
+</body>
+</html>

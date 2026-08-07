@@ -17,3 +17,5 @@ FunctionInvocationResult result = await factory.InvokeServiceBusAsync(
 
 result.EnsureSucceeded();
 ```
+
+For complete xUnit examples covering rich messages, batches, binding metadata, and capability boundaries, see `samples/Testing/ServiceTriggers.Tests` in the worker repository.

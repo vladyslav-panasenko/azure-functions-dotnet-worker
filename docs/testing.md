@@ -40,6 +40,60 @@ FunctionInvocationResult blobResult = await factory.InvokeBlobAsync(
 
 Use `ServiceBusTriggerTestData.MessageBatch`/`InvokeServiceBusBatchAsync` for batched messages, `ServiceBusTriggerTestData.Body` for body-only bindings, and `BlobTriggerTestData.Client` when a Blob SDK client parameter is the conversion under test. These APIs intentionally perform no network operations.
 
+### What to test
+
+| Scenario | Test API | Useful assertions |
+| --- | --- | --- |
+| Rich Service Bus message | `InvokeServiceBusAsync` | Body, message ID, correlation/session data, application properties, delivery count, middleware, logs, outputs |
+| Service Bus batch | `InvokeServiceBusBatchAsync` | Message ordering, per-message identity and properties, batch business rules, failure projection |
+| Body-only Service Bus binding | `ServiceBusTriggerTestData.Body` with `InvokeAsync` | String, bytes, JSON, or POCO conversion without taking an Azure SDK model dependency in function code |
+| Blob content | `InvokeBlobAsync` | Byte/string/POCO content, `{name}` binding data, middleware, output bindings, logs |
+| Blob SDK client | `InvokeBlobClientAsync` | Container/blob identity and dependency configuration without a storage request |
+| Invalid test data | Trigger data builders | Empty batches, missing Service Bus lock tokens, invalid connection/container/blob names |
+
+For example, this verifies the SDK message converter, application properties, host-shaped metadata, and user-code result:
+
+```csharp
+ServiceBusReceivedMessage message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+    body: BinaryData.FromString("order-created"),
+    messageId: "message-42",
+    deliveryCount: 2,
+    lockTokenGuid: Guid.NewGuid(),
+    properties: new Dictionary<string, object> { ["source"] = "test" });
+
+FunctionInvocationResult result = await factory.InvokeServiceBusAsync(
+    "ServiceBusMessage",
+    "message",
+    message);
+
+result.EnsureSucceeded();
+Assert.Contains("message-42", ((FunctionTestValue.StringValue)result.ReturnValue!).Value);
+```
+
+This verifies Blob content and a path token without starting Azurite:
+
+```csharp
+FunctionInvocationResult result = await factory.InvokeBlobAsync(
+    "BlobBytes",
+    "blob",
+    BinaryData.FromString("invoice-content"),
+    "invoices/42.txt",
+    new Uri("https://account.blob.core.windows.net/testing/invoices/42.txt"));
+
+result.EnsureSucceeded();
+```
+
+The complete runnable project is `samples/Testing/ServiceTriggers.Tests`. It also demonstrates batch input, Blob SDK-client binding, fixture disposal, and capability-boundary assertions.
+
+### What still needs a real host and service
+
+Do not use a successful synthetic invocation as evidence that a Service Bus subscription, Blob listener, or production connection is configured correctly. Escalate to Core Tools/emulators or a deployed environment for:
+
+- queue/topic/subscription selection and listener startup;
+- completion, abandonment, dead-lettering, lock renewal, sessions, and duplicate detection;
+- Blob polling, Event Grid delivery, receipts, poison handling, and durable output writes;
+- host retry scheduling, concurrency controls, scale, identity, networking, and service permissions.
+
 ## Built-in HTTP is function-targeted
 
 The built-in HTTP client targets one generated function name. The request URL is payload passed to that function; it is not used to choose a function and no function key is enforced.

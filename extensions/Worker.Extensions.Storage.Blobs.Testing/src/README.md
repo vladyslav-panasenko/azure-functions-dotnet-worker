@@ -14,3 +14,5 @@ FunctionInvocationResult result = await factory.InvokeBlobAsync(
 
 result.EnsureSucceeded();
 ```
+
+For complete xUnit examples covering content binding, path tokens, network-free SDK-client conversion, and capability boundaries, see `samples/Testing/ServiceTriggers.Tests` in the worker repository.
