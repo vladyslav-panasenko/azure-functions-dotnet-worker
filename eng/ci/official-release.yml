@@ -46,6 +46,11 @@ variables:
       !Microsoft.Azure.Functions.Worker.Sdk.*.nupkg
       !Microsoft.Azure.Functions.Worker.ApplicationInsights.*.nupkg
       !Microsoft.Azure.Functions.Worker.OpenTelemetry.*.nupkg
+      !Microsoft.Azure.Functions.Worker.Testing.*.nupkg
+      !Microsoft.Azure.Functions.Worker.Extensions.*.nupkg
+      !Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore.Testing.*.nupkg
+      !Microsoft.Azure.Functions.Worker.Extensions.ServiceBus.Testing.*.nupkg
+      !Microsoft.Azure.Functions.Worker.Extensions.Storage.Blobs.Testing.*.nupkg
       !*.symbols.nupkg
 
 - ${{ if eq(parameters.packages, 'sdk') }}:

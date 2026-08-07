@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <TestingPackageVersion Condition="'$(TestingPackageVersion)' == ''">1.0.0-preview.1-local</TestingPackageVersion>
+    <AspNetCoreTestingPackageVersion Condition="'$(AspNetCoreTestingPackageVersion)' == ''">1.0.0-preview.1-local</AspNetCoreTestingPackageVersion>
+    <ServiceBusTestingPackageVersion Condition="'$(ServiceBusTestingPackageVersion)' == ''">1.0.0-preview.1-local</ServiceBusTestingPackageVersion>
+    <StorageBlobsTestingPackageVersion Condition="'$(StorageBlobsTestingPackageVersion)' == ''">1.0.0-preview.1-local</StorageBlobsTestingPackageVersion>
+    <WorkerPackageVersion Condition="'$(WorkerPackageVersion)' == ''">2.52.0-local</WorkerPackageVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="$(WorkerPackageVersion)" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Testing" Version="$(TestingPackageVersion)" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore.Testing"
+                      Version="$(AspNetCoreTestingPackageVersion)" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.ServiceBus.Testing"
+                      Version="$(ServiceBusTestingPackageVersion)" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Storage.Blobs.Testing"
+                      Version="$(StorageBlobsTestingPackageVersion)" />
+  </ItemGroup>
+</Project>
